@@ -6,6 +6,7 @@ use solana_program::{
     msg,
     program::{invoke, invoke_signed},
     program_error::ProgramError,
+    program_pack::Pack,
     pubkey::Pubkey,
     rent::Rent,
     system_instruction,
@@ -29,7 +30,6 @@ pub const SOL_USD_FEED: Pubkey = Pubkey::new_from_array([
     120, 245, 122, 225, 25, 94, 140, 73, 122, 139, 224, 84, 173, 82, 173, 244, 200, 151, 111, 132, 54, 115, 35, 9, 226, 42, 247, 6, 119, 36, 173, 150
 ]);
 
-// Price constants - FIXED UNITS AND SCALING
 pub const TOKEN_PRICE_USD_CENTS: u64 = 10; // Token price = 0.1 USD = 10 cents
 pub const USD_CENTS_SCALE: u64 = 100; // 1 USD = 100 cents
 pub const CHAINLINK_USD_DECIMALS: u8 = 8; // Chainlink SOL/USD price has 8 decimals
@@ -73,6 +73,8 @@ pub enum EscrowError {
     InvestmentBelowMinimum,
     #[error("Investment amount exceeds maximum per address")]
     InvestmentExceedsMaximum,
+    #[error("Invalid token account")]
+    InvalidTokenAccount,
 }
 
 impl From<EscrowError> for ProgramError {
@@ -94,10 +96,23 @@ pub struct GlobalEscrow {
     pub total_sol_withdrawn: u64,     // SOL withdrawn by initializer after lock periods
     pub lock_duration: i64,           // Lock duration in seconds
     pub bump_seed: u8,
+    
+    // IMMUTABLE ORACLE CONFIG 
+    pub oracle_program_id: Pubkey,    // Chainlink oracle program
+    pub price_feed_pubkey: Pubkey,    // SOL/USD price feed
+    
+    // IMMUTABLE CONFIG VALUES 
+    pub min_sol_investment: u64,      // Minimum SOL investment
+    pub max_sol_investment: u64,      // Maximum SOL per address
+    pub price_staleness_threshold: u64, // Price staleness in seconds
+    
+    // SALE MANAGEMENT
+    pub sale_end_timestamp: i64,      // When sale ends (for unsold token reclaim)
 }
 
 impl GlobalEscrow {
-    pub const LEN: usize = 1 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1;
+    // Updated size: original + oracle_program_id + price_feed_pubkey + 3 config values + sale_end_timestamp
+    pub const LEN: usize = 1 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1 + 32 + 32 + 8 + 8 + 8 + 8;
 }
 
 // Per-investor account - one per investor per global escrow
@@ -199,7 +214,16 @@ pub enum EscrowInstruction {
     /// 7. `[]` Associated token program
     /// 8. `[]` System program
     /// 9. `[]` Rent sysvar
-    InitializeEscrow { token_amount: u64, lock_duration: i64 },
+    /// 10. `[]` Oracle program 
+    /// 11. `[]` Price feed 
+    InitializeEscrow { 
+        token_amount: u64, 
+        lock_duration: i64,
+        sale_end_timestamp: i64,
+        min_sol_investment: u64,
+        max_sol_investment: u64,
+        price_staleness_threshold: u64,
+    },
     
     /// Deposit SOL and receive all tokens immediately
     /// Accounts expected:
@@ -235,6 +259,16 @@ pub enum EscrowInstruction {
     /// 0. `[]` Global escrow account
     /// 1. `[]` Clock sysvar
     GetEscrowStatus,
+    
+    /// Close sale and reclaim unsold tokens 
+    /// Only recipient_wallet can call after sale_end_timestamp
+    /// Accounts expected:
+    /// 0. `[signer]` Recipient wallet
+    /// 1. `[writable]` Global escrow account
+    /// 2. `[writable]` Token vault account (PDA)
+    /// 3. `[writable]` Recipient's token account (destination)
+    /// 4. `[]` Token program
+    CloseSale,
 }
 
 // Safe math helpers with overflow protection
@@ -285,17 +319,18 @@ pub fn calculate_tokens_for_sol(
 pub fn get_chainlink_price<'a>(
     price_feed_account: &AccountInfo<'a>,
     oracle_program: &AccountInfo<'a>,
+    global_escrow: &GlobalEscrow,
 ) -> Result<(u64, i64), ProgramError> {
-    // Validate Chainlink program ID
-    if oracle_program.key != &CHAINLINK_PROGRAM_ID {
+    // Validate Chainlink program ID using immutable oracle config
+    if oracle_program.key != &global_escrow.oracle_program_id {
         msg!("Invalid Chainlink program: {}", oracle_program.key);
         return Err(EscrowError::InvalidPriceFeed.into());
     }
 
-    // Validate price feed address
-    if price_feed_account.key != &SOL_USD_FEED {
+    // Validate price feed address using immutable oracle config
+    if price_feed_account.key != &global_escrow.price_feed_pubkey {
         msg!("Invalid price feed: {}", price_feed_account.key);
-        msg!("Expected: {}", SOL_USD_FEED);
+        msg!("Expected: {}", global_escrow.price_feed_pubkey);
         return Err(EscrowError::InvalidPriceFeed.into());
     }
 
@@ -305,10 +340,10 @@ pub fn get_chainlink_price<'a>(
         price_feed_account.clone(),
     ).map_err(|_| EscrowError::InvalidPriceFeed)?;
     
-    // Check for stale data (5 minutes threshold)
+    // Check for stale data using immutable config threshold
     let current_timestamp = Clock::get()?.unix_timestamp;
-    if current_timestamp - round_data.timestamp as i64 > PRICE_STALENESS_THRESHOLD as i64 {
-        msg!("Stale price feed: {} > 300", current_timestamp - round_data.timestamp as i64);
+    if current_timestamp - round_data.timestamp as i64 > global_escrow.price_staleness_threshold as i64 {
+        msg!("Stale price feed: {} > {}", current_timestamp - round_data.timestamp as i64, global_escrow.price_staleness_threshold);
         return Err(EscrowError::StalePriceData.into());
     }
     
@@ -336,9 +371,25 @@ pub fn process_instruction(
         .map_err(|_| EscrowError::InvalidInstruction)?;
 
     match instruction {
-        EscrowInstruction::InitializeEscrow { token_amount, lock_duration } => {
+        EscrowInstruction::InitializeEscrow { 
+            token_amount, 
+            lock_duration, 
+            sale_end_timestamp,
+            min_sol_investment,
+            max_sol_investment,
+            price_staleness_threshold,
+        } => {
             msg!("Instruction: InitializeEscrow");
-            process_initialize_escrow(program_id, accounts, token_amount, lock_duration)
+            process_initialize_escrow(
+                program_id, 
+                accounts, 
+                token_amount, 
+                lock_duration,
+                sale_end_timestamp,
+                min_sol_investment,
+                max_sol_investment,
+                price_staleness_threshold,
+            )
         }
         EscrowInstruction::DepositSol { sol_amount } => {
             msg!("Instruction: DepositSol");
@@ -352,6 +403,10 @@ pub fn process_instruction(
             msg!("Instruction: GetEscrowStatus");
             process_get_escrow_status(accounts)
         }
+        EscrowInstruction::CloseSale => {
+            msg!("Instruction: CloseSale");
+            process_close_sale(program_id, accounts)
+        }
     }
 }
 
@@ -360,6 +415,10 @@ pub fn process_initialize_escrow(
     accounts: &[AccountInfo],
     token_amount: u64,
     lock_duration: i64,
+    sale_end_timestamp: i64,
+    min_sol_investment: u64,
+    max_sol_investment: u64,
+    price_staleness_threshold: u64,
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
     let initializer = next_account_info(account_info_iter)?;
@@ -372,14 +431,25 @@ pub fn process_initialize_escrow(
     let _associated_token_program = next_account_info(account_info_iter)?;
     let system_program = next_account_info(account_info_iter)?;
     let rent = &Rent::get()?;
+    let oracle_program = next_account_info(account_info_iter)?;
+    let price_feed = next_account_info(account_info_iter)?;
 
     if !initializer.is_signer {
         return Err(ProgramError::MissingRequiredSignature);
     }
     
-    // FIXED: Add critical security checks
     if token_program.key != &spl_token::id() {
         return Err(ProgramError::IncorrectProgramId);
+    }
+    
+    // ORACLE IMMUTABILITY 
+    // Validate oracle program and feed match expected values before storing immutably
+    if oracle_program.key != &CHAINLINK_PROGRAM_ID {
+        return Err(EscrowError::InvalidPriceFeed.into());
+    }
+    
+    if price_feed.key != &SOL_USD_FEED {
+        return Err(EscrowError::InvalidPriceFeed.into());
     }
     
     if system_program.key != &solana_program::system_program::id() {
@@ -442,7 +512,6 @@ pub fn process_initialize_escrow(
     )?;
 
     // Create token vault if it doesn't exist (owned by global escrow PDA)
-    // FIXED: Check owner and proper initialization instead of just data_len
     if token_vault_account.owner != &spl_token::id() || token_vault_account.data_len() != 165 {
         let rent = Rent::get()?;
         let token_account_size = 165; // Size of SPL token account (Account::LEN)
@@ -527,6 +596,18 @@ pub fn process_initialize_escrow(
         total_sol_withdrawn: 0,
         lock_duration,
         bump_seed,
+        
+        // IMMUTABLE ORACLE CONFIG 
+        oracle_program_id: *oracle_program.key,
+        price_feed_pubkey: *price_feed.key,
+        
+        // IMMUTABLE CONFIG VALUES 
+        min_sol_investment,
+        max_sol_investment,
+        price_staleness_threshold,
+        
+        // SALE MANAGEMENT
+        sale_end_timestamp,
     };
 
     global_escrow.serialize(&mut &mut global_escrow_account.data.borrow_mut()[..])?;
@@ -567,16 +648,22 @@ pub fn process_deposit_sol(
         return Err(ProgramError::MissingRequiredSignature);
     }
 
-    // FIXED: Add critical security checks for program IDs
+    // Load global escrow first
+    let mut global_escrow = GlobalEscrow::try_from_slice(&global_escrow_account.data.borrow())?;
+    if !global_escrow.is_initialized {
+        return Err(EscrowError::InvalidEscrowStatus.into());
+    }
+
     if token_program.key != &spl_token::id() {
         return Err(ProgramError::IncorrectProgramId);
     }
     
-    if oracle_program.key != &CHAINLINK_PROGRAM_ID {
+    // ORACLE IMMUTABILITY: Use stored oracle config instead of hardcoded values
+    if oracle_program.key != &global_escrow.oracle_program_id {
         return Err(EscrowError::InvalidPriceFeed.into());
     }
     
-    if price_feed.key != &SOL_USD_FEED {
+    if price_feed.key != &global_escrow.price_feed_pubkey {
         return Err(EscrowError::InvalidPriceFeed.into());
     }
     
@@ -584,14 +671,7 @@ pub fn process_deposit_sol(
         return Err(ProgramError::IncorrectProgramId);
     }
 
-    // Load global escrow
-    let mut global_escrow = GlobalEscrow::try_from_slice(&global_escrow_account.data.borrow())?;
-    if !global_escrow.is_initialized {
-        return Err(EscrowError::InvalidEscrowStatus.into());
-    }
-
     // Create investor's ATA if it doesn't exist  
-    // FIXED: Check if it's properly initialized ATA
     if investor_token_account.owner != &spl_token::id() || investor_token_account.data_len() != 165 {
         msg!("Creating ATA for investor");
         
@@ -605,7 +685,6 @@ pub fn process_deposit_sol(
             return Err(ProgramError::InvalidAccountData);
         }
 
-        // Create the ATA - FIXED PARAMETERS
         let create_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(
             investor.key,      // payer
             investor.key,      // owner 
@@ -625,6 +704,34 @@ pub fn process_deposit_sol(
                 associated_token_program.clone(),
             ],
         )?;
+    }
+
+    // STRICT ATA VALIDATION
+    // Now validate the token account (after creation if needed)
+    let token_account_data = spl_token::state::Account::unpack(&investor_token_account.data.borrow())?;
+    
+    // Verify token account owner is the investor
+    if token_account_data.owner != *investor.key {
+        msg!("Invalid token account owner. Expected: {}, Found: {}", investor.key, token_account_data.owner);
+        return Err(EscrowError::InvalidTokenAccount.into());
+    }
+    
+    // Verify token account mint matches the escrow token mint
+    if token_account_data.mint != global_escrow.token_mint_pubkey {
+        msg!("Invalid token account mint. Expected: {}, Found: {}", global_escrow.token_mint_pubkey, token_account_data.mint);
+        return Err(EscrowError::InvalidTokenAccount.into());
+    }
+    
+    // Verify no delegate is set (security requirement)
+    if token_account_data.delegate.is_some() {
+        msg!("Token account has delegate set, which is not allowed for security");
+        return Err(EscrowError::InvalidTokenAccount.into());
+    }
+    
+    // Verify no close_authority is set (security requirement)
+    if token_account_data.close_authority.is_some() {
+        msg!("Token account has close_authority set, which is not allowed for security");
+        return Err(EscrowError::InvalidTokenAccount.into());
     }
 
     // Verify investor PDA
@@ -649,13 +756,13 @@ pub fn process_deposit_sol(
         return Err(EscrowError::InvalidPDA.into());
     }
 
-    // SECURITY: Validate investment limits
-    if sol_amount < MIN_SOL_INVESTMENT_LAMPORTS {
+    // SECURITY: Validate investment limits using immutable config
+    if sol_amount < global_escrow.min_sol_investment {
         return Err(EscrowError::InvestmentBelowMinimum.into());
     }
 
-    // Get SOL price from Chainlink
-    let (sol_usd_price, _timestamp) = get_chainlink_price(price_feed, oracle_program)?;
+    // Get SOL price from Chainlink using immutable oracle config
+    let (sol_usd_price, _timestamp) = get_chainlink_price(price_feed, oracle_program, &global_escrow)?;
     
     // Calculate tokens for SOL amount
     let tokens_to_receive = calculate_tokens_for_sol(sol_amount, sol_usd_price)?;
@@ -667,10 +774,9 @@ pub fn process_deposit_sol(
     }
 
     // Create or update investor account
-    // FIXED: Check proper initialization
     let investor_data = if investor_account.owner != program_id || investor_account.data_len() != InvestorAccount::LEN {
-        // SECURITY: Check maximum investment limit for new investor
-        if sol_amount > MAX_SOL_INVESTMENT_LAMPORTS {
+        // SECURITY: Check maximum investment limit for new investor using immutable config
+        if sol_amount > global_escrow.max_sol_investment {
             return Err(EscrowError::InvestmentExceedsMaximum.into());
         }
         // Create new investor account
@@ -716,22 +822,20 @@ pub fn process_deposit_sol(
         // Update existing investor account
         let mut existing_data = InvestorAccount::try_from_slice(&investor_account.data.borrow())?;
         
-        // SECURITY: Check maximum investment limit for existing investor
+        // SECURITY: Check maximum investment limit for existing investor using immutable config
         let total_investment = existing_data.sol_deposited + sol_amount;
-        if total_investment > MAX_SOL_INVESTMENT_LAMPORTS {
+        if total_investment > global_escrow.max_sol_investment {
             return Err(EscrowError::InvestmentExceedsMaximum.into());
         }
         
         existing_data.sol_deposited += sol_amount;
         existing_data.tokens_received += tokens_to_receive;
-        // FIXED: Keep original deposit timestamp, only update price for current deposit
         // existing_data.deposit_timestamp stays the same (first deposit time)
         existing_data.sol_usd_price = sol_usd_price; // Update to latest price for reference
         existing_data
     };
 
     // Create SOL vault if it doesn't exist
-    // FIXED: Check proper ownership and initialization
     if sol_vault_account.owner != program_id {
         let rent = Rent::get()?;
         let rent_lamports = rent.minimum_balance(0); // Empty account for storing SOL
@@ -806,7 +910,6 @@ pub fn process_deposit_sol(
         tokens_to_receive,
     )?;
 
-    // SECURITY FIX: Update state BEFORE external token transfer to prevent reentrancy
     global_escrow.tokens_sold += tokens_to_receive;
     global_escrow.total_sol_deposited += sol_amount;
     global_escrow.serialize(&mut &mut global_escrow_account.data.borrow_mut()[..])?;
@@ -851,7 +954,7 @@ pub fn process_withdraw_locked_sol(
     let investor_account = next_account_info(account_info_iter)?;
     let sol_vault_account = next_account_info(account_info_iter)?;
     let recipient_wallet = next_account_info(account_info_iter)?;
-    let system_program = next_account_info(account_info_iter)?;
+    let _system_program = next_account_info(account_info_iter)?;
     let _clock = next_account_info(account_info_iter)?;
 
     if !withdrawer.is_signer {
@@ -872,9 +975,8 @@ pub fn process_withdraw_locked_sol(
         return Err(EscrowError::NoSolToWithdraw.into());
     }
     
-    // SECURITY: Only initializer OR recipient can withdraw locked SOL
-    if withdrawer.key != &global_escrow.initializer_pubkey && 
-       withdrawer.key != &global_escrow.recipient_wallet {
+    // SECURITY: Only recipient_wallet can withdraw locked SOL 
+    if withdrawer.key != &global_escrow.recipient_wallet {
         return Err(EscrowError::Unauthorized.into());
     }
 
@@ -894,7 +996,7 @@ pub fn process_withdraw_locked_sol(
     }
 
     // Verify SOL vault PDA
-    let (expected_sol_vault, sol_vault_bump) = find_sol_vault_pda(
+    let (expected_sol_vault, _sol_vault_bump) = find_sol_vault_pda(
         &investor_data.investor_pubkey,
         &investor_data.global_escrow_pubkey,
         program_id,
@@ -924,12 +1026,9 @@ pub fn process_withdraw_locked_sol(
     }
 
     // Transfer locked SOL from SOL vault to recipient wallet
-    // FIXED: Use direct lamport manipulation instead of system_instruction::transfer
-    // because PDA cannot sign system transfers, but program can modify lamports directly
     **sol_vault_account.try_borrow_mut_lamports()? -= sol_to_withdraw;
     **recipient_wallet.try_borrow_mut_lamports()? += sol_to_withdraw;
 
-    // FIXED: Update global escrow total_sol_withdrawn
     let mut updated_global_escrow = global_escrow;
     updated_global_escrow.total_sol_withdrawn += sol_to_withdraw;
     updated_global_escrow.serialize(&mut &mut global_escrow_account.data.borrow_mut()[..])?;
@@ -961,6 +1060,96 @@ pub fn process_get_escrow_status(accounts: &[AccountInfo]) -> ProgramResult {
     msg!("  Total SOL deposited: {}", global_escrow.total_sol_deposited);
     msg!("  Total SOL withdrawn: {}", global_escrow.total_sol_withdrawn);
     msg!("  Lock duration: {}s", global_escrow.lock_duration);
+    
+    Ok(())
+}
+
+pub fn process_close_sale(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let caller = next_account_info(account_info_iter)?; // recipient_wallet calling this
+    let global_escrow_account = next_account_info(account_info_iter)?;
+    let token_vault_account = next_account_info(account_info_iter)?;
+    let recipient_token_account = next_account_info(account_info_iter)?; // recipient's token account to receive unsold tokens
+    let token_program = next_account_info(account_info_iter)?;
+    let _clock = next_account_info(account_info_iter)?;
+
+    // Validate caller is signer
+    if !caller.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+
+    // Validate token program
+    if token_program.key != &spl_token::id() {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+
+    // Load global escrow data
+    let global_escrow = GlobalEscrow::try_from_slice(&global_escrow_account.data.borrow())?;
+    
+    if !global_escrow.is_initialized {
+        return Err(EscrowError::InvalidEscrowStatus.into());
+    }
+
+    // AUTHORIZATION: Only recipient_wallet can close sale and reclaim unsold tokens
+    if caller.key != &global_escrow.recipient_wallet {
+        msg!("Only recipient wallet can close sale. Expected: {}, Found: {}", global_escrow.recipient_wallet, caller.key);
+        return Err(EscrowError::Unauthorized.into());
+    }
+
+    // Check if sale has ended (using sale_end_timestamp from immutable config)
+    let current_timestamp = Clock::get()?.unix_timestamp;
+    if current_timestamp < global_escrow.sale_end_timestamp {
+        msg!("Sale has not ended yet. Current: {}, Sale ends: {}", current_timestamp, global_escrow.sale_end_timestamp);
+        return Err(EscrowError::InvalidEscrowStatus.into());
+    }
+
+    // Calculate unsold tokens
+    let unsold_tokens = global_escrow.total_tokens_available - global_escrow.tokens_sold;
+    
+    if unsold_tokens == 0 {
+        msg!("No unsold tokens to reclaim");
+        return Err(EscrowError::NotEnoughTokens.into());
+    }
+
+    // Validate token vault PDA
+    let (expected_token_vault, _bump) = find_token_vault_pda(&global_escrow_account.key, program_id);
+    if token_vault_account.key != &expected_token_vault {
+        return Err(EscrowError::InvalidPDA.into());
+    }
+
+    // Transfer unsold tokens from token vault to recipient
+    let transfer_instruction = spl_instruction::transfer(
+        token_program.key,
+        token_vault_account.key,
+        recipient_token_account.key,
+        global_escrow_account.key,
+        &[],
+        unsold_tokens,
+    )?;
+
+    invoke_signed(
+        &transfer_instruction,
+        &[
+            token_vault_account.clone(),
+            recipient_token_account.clone(),
+            global_escrow_account.clone(),
+            token_program.clone(),
+        ],
+        &[&[
+            b"global_escrow",
+            global_escrow.initializer_pubkey.as_ref(),
+            global_escrow.token_mint_pubkey.as_ref(),
+            &[global_escrow.bump_seed],
+        ]],
+    )?;
+
+    msg!(
+        "Sale closed: {} unsold tokens transferred to recipient wallet",
+        unsold_tokens
+    );
     
     Ok(())
 }
