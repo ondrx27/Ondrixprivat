@@ -38,7 +38,7 @@ pub const SOL_LAMPORTS: u64 = 1_000_000_000; // 1 SOL = 1e9 lamports
 pub const PRICE_STALENESS_THRESHOLD: u64 = 300; // 5 minutes in seconds
 
 // Investment limits for security
-pub const MIN_SOL_INVESTMENT_LAMPORTS: u64 = 100_000_000; // 0.1 SOL minimum
+pub const MIN_SOL_INVESTMENT_LAMPORTS: u64 = 1_000_000; // 0.001 SOL minimum
 pub const MAX_SOL_INVESTMENT_LAMPORTS: u64 = 10_000_000_000_000; // 10,000 SOL maximum per address
 
 #[derive(Error, Debug, Copy, Clone)]
@@ -215,7 +215,7 @@ pub enum EscrowInstruction {
     /// 8. `[]` System program
     /// 9. `[]` Rent sysvar
     /// 10. `[]` Oracle program 
-    /// 11. `[]` Price feed 
+    /// 11. `[]` Price feed
     InitializeEscrow { 
         token_amount: u64, 
         lock_duration: i64,
@@ -260,7 +260,7 @@ pub enum EscrowInstruction {
     /// 1. `[]` Clock sysvar
     GetEscrowStatus,
     
-    /// Close sale and reclaim unsold tokens 
+    /// Close sale and reclaim unsold tokens
     /// Only recipient_wallet can call after sale_end_timestamp
     /// Accounts expected:
     /// 0. `[signer]` Recipient wallet
@@ -442,7 +442,7 @@ pub fn process_initialize_escrow(
         return Err(ProgramError::IncorrectProgramId);
     }
     
-    // ORACLE IMMUTABILITY 
+    // ORACLE IMMUTABILITY
     // Validate oracle program and feed match expected values before storing immutably
     if oracle_program.key != &CHAINLINK_PROGRAM_ID {
         return Err(EscrowError::InvalidPriceFeed.into());
@@ -706,7 +706,7 @@ pub fn process_deposit_sol(
         )?;
     }
 
-    // STRICT ATA VALIDATION
+    // STRICT ATA VALIDATION 
     // Now validate the token account (after creation if needed)
     let token_account_data = spl_token::state::Account::unpack(&investor_token_account.data.borrow())?;
     
@@ -830,7 +830,6 @@ pub fn process_deposit_sol(
         
         existing_data.sol_deposited += sol_amount;
         existing_data.tokens_received += tokens_to_receive;
-        // existing_data.deposit_timestamp stays the same (first deposit time)
         existing_data.sol_usd_price = sol_usd_price; // Update to latest price for reference
         existing_data
     };
