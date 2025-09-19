@@ -29,6 +29,11 @@ export enum EscrowInstruction {
   WithdrawLockedSol = 2,
   GetEscrowStatus = 3,
   CloseSale = 4,
+  TotalDeposited = 5,
+  TotalUnlocked = 6,
+  TotalLocked = 7,
+  NextUnlockTime = 8,
+  GetInvestorLockStatus = 9,
 }
 
 // Investor status enum
@@ -47,6 +52,7 @@ export class EscrowInstructionData {
       tokenAmount?: bigint;
       lockDuration?: bigint;
       solAmount?: bigint;
+      investorPubkey?: PublicKey;
     }
   ) {}
 
@@ -61,7 +67,14 @@ export class EscrowInstructionData {
       const solAmountBuffer = Buffer.alloc(8);
       solAmountBuffer.writeBigUInt64LE(this.params.solAmount);
       buffers.push(solAmountBuffer);
+    } else if (this.instruction === EscrowInstruction.NextUnlockTime && this.params?.investorPubkey) {
+      // Add investor pubkey (32 bytes)
+      buffers.push(this.params.investorPubkey.toBuffer());
+    } else if (this.instruction === EscrowInstruction.GetInvestorLockStatus && this.params?.investorPubkey) {
+      // Add investor pubkey (32 bytes)
+      buffers.push(this.params.investorPubkey.toBuffer());
     }
+    // For TotalDeposited, TotalUnlocked, TotalLocked - no additional data needed
 
     return Buffer.concat(buffers);
   }
@@ -263,6 +276,7 @@ function parseGlobalEscrowData(data: Buffer): {
   totalSolDeposited: bigint;
   totalSolWithdrawn: bigint;
   lockDuration: bigint;
+  initializationTimestamp: bigint;
 } {
   const reader = new DataView(data.buffer, data.byteOffset, data.byteLength);
   let offset = 0;
@@ -277,6 +291,14 @@ function parseGlobalEscrowData(data: Buffer): {
   const totalSolDeposited = reader.getBigUint64(offset, true); offset += 8;
   const totalSolWithdrawn = reader.getBigUint64(offset, true); offset += 8;
   const lockDuration = reader.getBigInt64(offset, true); offset += 8;
+  offset += 1; // bump_seed
+  offset += 32; // oracle_program_id
+  offset += 32; // price_feed_pubkey
+  offset += 8; // min_sol_investment
+  offset += 8; // max_sol_investment
+  offset += 8; // price_staleness_threshold
+  offset += 8; // sale_end_timestamp
+  const initializationTimestamp = reader.getBigInt64(offset, true); offset += 8;
   
   return {
     isInitialized,
@@ -284,7 +306,8 @@ function parseGlobalEscrowData(data: Buffer): {
     tokensSold,
     totalSolDeposited,
     totalSolWithdrawn,
-    lockDuration
+    lockDuration,
+    initializationTimestamp
   };
 }
 
@@ -296,6 +319,7 @@ export async function getEscrowStatus(): Promise<{
   totalSolDeposited: number;
   totalSolWithdrawn: number;
   lockDuration: number;
+  initializationTimestamp: number;
 }> {
   try {
     const accountInfo = await connection.getAccountInfo(GLOBAL_ESCROW);
@@ -314,6 +338,7 @@ export async function getEscrowStatus(): Promise<{
       totalSolDeposited: Number(escrowData.totalSolDeposited) / LAMPORTS_PER_SOL, // Convert to SOL
       totalSolWithdrawn: Number(escrowData.totalSolWithdrawn) / LAMPORTS_PER_SOL,
       lockDuration: Number(escrowData.lockDuration),
+      initializationTimestamp: Number(escrowData.initializationTimestamp),
     };
   } catch (error) {
     console.error('Error fetching escrow status:', error);
@@ -449,5 +474,144 @@ export async function getAllInvestors(): Promise<Array<{
   } catch (error) {
     console.error('Error fetching all investors:', error);
     return [];
+  }
+}
+
+// TRANSPARENCY FUNCTIONS - Call smart contract directly
+
+// Create instruction for TotalDeposited
+export async function createTotalDepositedInstruction(): Promise<TransactionInstruction> {
+  const data = new EscrowInstructionData(EscrowInstruction.TotalDeposited);
+  
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: GLOBAL_ESCROW, isSigner: false, isWritable: false },
+    ],
+    data: data.serialize(),
+  });
+}
+
+// Create instruction for TotalUnlocked
+export async function createTotalUnlockedInstruction(): Promise<TransactionInstruction> {
+  const data = new EscrowInstructionData(EscrowInstruction.TotalUnlocked);
+  
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: GLOBAL_ESCROW, isSigner: false, isWritable: false },
+    ],
+    data: data.serialize(),
+  });
+}
+
+// Create instruction for TotalLocked
+export async function createTotalLockedInstruction(): Promise<TransactionInstruction> {
+  const data = new EscrowInstructionData(EscrowInstruction.TotalLocked);
+  
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: GLOBAL_ESCROW, isSigner: false, isWritable: false },
+    ],
+    data: data.serialize(),
+  });
+}
+
+// Create instruction for NextUnlockTime
+export async function createNextUnlockTimeInstruction(investor: PublicKey): Promise<TransactionInstruction> {
+  const [investorPDA] = findInvestorPDA(investor, GLOBAL_ESCROW);
+  const data = new EscrowInstructionData(EscrowInstruction.NextUnlockTime, { investorPubkey: investor });
+  
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: GLOBAL_ESCROW, isSigner: false, isWritable: false },
+      { pubkey: investorPDA, isSigner: false, isWritable: false },
+      { pubkey: SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false },
+    ],
+    data: data.serialize(),
+  });
+}
+
+// Get transparency data from smart contract
+export async function getSolanaTransparencyData(): Promise<{
+  totalDeposited: number;
+  totalUnlocked: number;
+  totalLocked: number;
+}> {
+  try {
+    // Use the existing getEscrowStatus function and calculate transparency values
+    const escrowData = await getEscrowStatus();
+    
+    // NEW LOGIC: Based on initialization-based timing (not individual deposit timing)
+    // - totalDeposited: direct from contract
+    // - Check if global unlock time has passed based on contract initialization
+    // - totalUnlocked: immediate 50% + time-unlocked portion (if unlock time passed)
+    // - totalLocked: only locked portion that hasn't been time-unlocked yet
+    
+    const totalDeposited = escrowData.totalSolDeposited;
+    const immediate50Percent = totalDeposited / 2; // 50% released immediately to project
+    const locked50Percent = totalDeposited / 2; // 50% time-locked
+    
+    // Check if global unlock time has passed
+    const currentTime = Math.floor(Date.now() / 1000);
+    const globalUnlockTime = escrowData.initializationTimestamp + escrowData.lockDuration;
+    const hasGlobalUnlockTimePassed = currentTime >= globalUnlockTime;
+    
+    // Calculate unlocked and locked amounts
+    let totalUnlocked: number;
+    let totalLocked: number;
+    
+    if (hasGlobalUnlockTimePassed) {
+      // Time has passed: 50% immediate + 50% time-unlocked = 100% available
+      totalUnlocked = totalDeposited; // All funds are now unlocked for withdrawal
+      totalLocked = 0; // Nothing is locked anymore
+    } else {
+      // Time hasn't passed: only 50% immediate is available
+      totalUnlocked = immediate50Percent; // Only immediate 50% available
+      totalLocked = locked50Percent; // 50% still locked by time
+    }
+    
+    console.log('🔍 Solana transparency calculation:', {
+      totalDeposited,
+      immediate50Percent,
+      locked50Percent,
+      currentTime,
+      globalUnlockTime,
+      hasGlobalUnlockTimePassed,
+      initializationTimestamp: escrowData.initializationTimestamp,
+      lockDuration: escrowData.lockDuration,
+      calculatedUnlocked: totalUnlocked,
+      calculatedLocked: totalLocked
+    });
+    
+    return {
+      totalDeposited,
+      totalUnlocked,
+      totalLocked: Math.max(0, totalLocked), // Ensure never negative
+    };
+  } catch (error) {
+    console.error('Error getting Solana transparency data:', error);
+    throw error;
+  }
+}
+
+// Get next unlock time (based on contract initialization, not individual deposits)
+export async function getSolanaNextUnlockTime(): Promise<number> {
+  try {
+    const escrowData = await getEscrowStatus();
+    
+    if (!escrowData.isInitialized) {
+      return 0; // Contract not initialized
+    }
+    
+    // Timer starts from contract initialization
+    const unlockTime = escrowData.initializationTimestamp + escrowData.lockDuration;
+    
+    return unlockTime;
+  } catch (error) {
+    console.error('Error getting next unlock time:', error);
+    return 0;
   }
 }

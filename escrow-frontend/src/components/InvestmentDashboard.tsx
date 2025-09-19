@@ -14,7 +14,7 @@ import {
 import { ethers } from 'ethers';
 import { CONTRACTS, ESCROW_ABI, NETWORKS } from '../config/contracts';
 import { useSolanaInvestment } from '../hooks/useSolanaInvestment';
-import { getCurrentBnbPrice, calculateTokensForBnb } from '../utils/solana';
+import { getCurrentBnbPrice, calculateTokensForBnb, getSolanaTransparencyData } from '../utils/solana';
 import { NetworkSwitchModal } from './NetworkSwitchModal';
 import { 
   SkeletonNetworkInfo, 
@@ -46,10 +46,18 @@ interface EscrowStatus {
   lockDuration: number;
 }
 
+interface TransparencyStats {
+  totalDeposited: string;
+  totalUnlocked: string;
+  totalLocked: string;
+  nextUnlockTime: number;
+}
+
 export const InvestmentDashboard: React.FC = () => {
   const wallet = useWallet();
   const [investorData, setInvestorData] = useState<InvestorData | null>(null);
   const [escrowStatus, setEscrowStatus] = useState<EscrowStatus | null>(null);
+  const [transparencyStats, setTransparencyStats] = useState<TransparencyStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasCheckedData, setHasCheckedData] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,9 +67,89 @@ export const InvestmentDashboard: React.FC = () => {
   const [currentBnbPrice, setCurrentBnbPrice] = useState<number>(580);
   const [showNetworkSwitchModal, setShowNetworkSwitchModal] = useState(false);
   const [targetNetwork, setTargetNetwork] = useState<'solana' | 'bnb'>('bnb');
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [solanaTransparencyStats, setSolanaTransparencyStats] = useState<{
+    totalDeposited: number;
+    totalUnlocked: number;
+    totalLocked: number;
+  } | null>(null);
   
   // Solana hook
   const solanaInvestment = useSolanaInvestment();
+
+  // Demo data for both networks
+  const getDemoData = () => {
+    const currentTime = Math.floor(Date.now() / 1000);
+    const depositTime = currentTime - 1800; // 30 minutes ago
+    
+    if (wallet.chain === 'solana') {
+      const solPrice = 237; // $237 per SOL (current price)
+      const investmentSol = 1.0; // 1 SOL investment
+      const tokensReceived = (investmentSol * solPrice) / 0.10; // 2370 tokens at $0.10 each
+      const lockDuration = 300; // 5 minutes for Solana
+      
+      // For demo, make investment 2 minutes ago so it's still locked
+      const demoDepositTime = currentTime - 120; // 2 minutes ago
+      const demoUnlockTime = demoDepositTime + lockDuration;
+      const demoIsUnlocked = currentTime >= demoUnlockTime;
+      
+      return {
+        investorData: {
+          isInitialized: true,
+          solDeposited: investmentSol * 1e9, // 1.000000000 SOL in lamports
+          tokensReceived: tokensReceived * 1e9, // 2370.000000000 tokens
+          depositTimestamp: demoDepositTime,
+          lockedSolAmount: demoIsUnlocked ? 0 : (investmentSol / 2) * 1e9, // 0.5 SOL locked
+          isUnlocked: demoIsUnlocked
+        },
+        escrowData: {
+          totalTokensAvailable: 10000, // Increased total supply to be realistic
+          tokensSold: 4500, // Multiple investors: our 2370 + others
+          totalSolDeposited: 8.5, // Total across all investors
+          totalSolWithdrawn: 4.25, // 50% released to project (8.5 * 0.5)
+          lockDuration,
+          initializationTimestamp: currentTime - 3600 // 1 hour ago
+        }
+      };
+    } else {
+      // BNB demo data
+      const bnbPrice = currentBnbPrice;
+      const investmentBnb = 1.0; // 1 BNB investment  
+      const tokensReceived = (investmentBnb * bnbPrice) / 0.10; // tokens at $0.10 each
+      const lockDuration = 14400; // 4 hours for BNB
+      const unlockTime = depositTime + lockDuration;
+      const isUnlocked = currentTime >= unlockTime;
+      
+      return {
+        investorData: {
+          isInitialized: true,
+          bnbDeposited: investmentBnb.toFixed(4),
+          tokensReceived: tokensReceived.toFixed(2),
+          depositTimestamp: depositTime,
+          bnbUsdPrice: bnbPrice.toString(),
+          firstDepositPrice: bnbPrice.toString(),
+          weightedAveragePrice: bnbPrice.toString(),
+          status: 1,
+          lockedBnbAmount: isUnlocked ? "0.0000" : (investmentBnb / 2).toFixed(4),
+          isUnlocked
+        },
+        escrowStatus: {
+          isInitialized: true,
+          totalTokensAvailable: "10000",
+          tokensSold: "8500", // Realistic: our ~5800 + others  
+          totalBnbDeposited: "12.5", // Total across all investors
+          totalBnbWithdrawn: "6.25", // 50% released (12.5 * 0.5)
+          lockDuration
+        },
+        transparencyStats: {
+          totalDeposited: "12.5", // Total deposited
+          totalUnlocked: "6.25", // 50% released to project
+          totalLocked: "6.25", // 50% still locked
+          nextUnlockTime: unlockTime
+        }
+      };
+    }
+  };
 
   // Detect Firefox for animation optimization
   const isFirefox = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
@@ -167,6 +255,27 @@ export const InvestmentDashboard: React.FC = () => {
     }
   }, [wallet.chain]);
 
+  // Load Solana transparency data
+  useEffect(() => {
+    if (wallet.chain === 'solana') {
+      const loadSolanaTransparency = async () => {
+        try {
+          const transparencyData = await getSolanaTransparencyData();
+          setSolanaTransparencyStats(transparencyData);
+        } catch (error) {
+          console.error('Error loading Solana transparency data:', error);
+          setSolanaTransparencyStats(null);
+        }
+      };
+
+      loadSolanaTransparency();
+      
+      // Update every 10 seconds
+      const interval = setInterval(loadSolanaTransparency, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [wallet.chain]);
+
   const fetchData = async () => {
     if (!wallet.address || wallet.chain !== 'bnb') return;
 
@@ -215,6 +324,54 @@ export const InvestmentDashboard: React.FC = () => {
         lockDuration: Number(status.lockDuration || 0),
       });
 
+      // Fetch transparency statistics
+      try {
+        const [totalDeposited, totalUnlocked, totalLocked] = await Promise.all([
+          escrowContract.totalDeposited(),
+          escrowContract.totalUnlocked(), 
+          escrowContract.totalLocked()
+        ]);
+
+        // Try to get next unlock time from a real investor
+        let nextUnlockTime = 0;
+        const potentialAddresses = [
+          "0x017ae1B2116dE27d3Fd9A89004604ef0e3658df3", // Real investor
+          "0x752669e07416E42b318471Eea005f7c9A7828ADF", // Fallback
+          wallet.address // Current user
+        ];
+        
+        for (const address of potentialAddresses) {
+          try {
+            const investorInfo = await escrowContract.getInvestorInfo(address);
+            const bnbDeposited = Number(ethers.formatEther(investorInfo[1] || 0));
+            
+            if (bnbDeposited > 0) {
+              const unlockTime = await escrowContract.nextUnlockTime(address);
+              nextUnlockTime = Number(unlockTime);
+              break;
+            }
+          } catch (err) {
+            // Continue to next address
+          }
+        }
+
+        setTransparencyStats({
+          totalDeposited: ethers.formatEther(totalDeposited),
+          totalUnlocked: ethers.formatEther(totalUnlocked),
+          totalLocked: ethers.formatEther(totalLocked),
+          nextUnlockTime
+        });
+        
+        console.log('📊 Transparency stats loaded:', {
+          totalDeposited: ethers.formatEther(totalDeposited),
+          totalUnlocked: ethers.formatEther(totalUnlocked),
+          totalLocked: ethers.formatEther(totalLocked)
+        });
+      } catch (transparencyError) {
+        console.log('⚠️ Transparency functions not available:', transparencyError);
+        // Не критично, можно работать без них
+      }
+
       // Fetch investor data
       const investor = await escrowContract.getInvestorInfo(wallet.address);
       const isUnlocked = await escrowContract.isUnlockTime(wallet.address);
@@ -256,6 +413,11 @@ export const InvestmentDashboard: React.FC = () => {
   };
 
   const handleInvest = async () => {
+    if (isDemoMode) {
+      setError("🎭 Demo mode is active. Please exit demo mode to make real investments.");
+      return;
+    }
+    
     if (!wallet.address || !investAmount || parseFloat(investAmount) < 0.001) return;
 
     const attemptInvestment = async (attempt: number = 1): Promise<void> => {
@@ -435,6 +597,41 @@ export const InvestmentDashboard: React.FC = () => {
     return (
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6">
         <div className="space-y-6">
+
+        {/* Demo Mode Toggle for Solana */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="text-purple-300">🎭</div>
+              <div>
+                <h3 className="text-purple-300 font-medium">Demo Mode</h3>
+                <p className="text-purple-400 text-sm">
+                  {isDemoMode 
+                    ? "Viewing interface with demo investor data" 
+                    : "Toggle to preview investor interface with sample data"
+                  }
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsDemoMode(!isDemoMode)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
+                isDemoMode ? 'bg-purple-600' : 'bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isDemoMode ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </motion.div>
+
         {/* Error Display for Solana */}
         <AnimatePresence>
           {(error || solanaInvestment.error) && (
@@ -445,9 +642,11 @@ export const InvestmentDashboard: React.FC = () => {
               transition={{ duration: 0.2, ease: "easeOut" }}
               style={getMotionStyles()}
               className={`px-4 py-3 rounded-lg flex items-center justify-between ${
-                (error || solanaInvestment.error)?.includes('✅') 
-                  ? 'bg-accent-green/20 border border-accent-green/30 text-accent-green'
-                  : 'bg-error/20 border border-error/30 text-error'
+                (error || solanaInvestment.error)?.includes('🎭') 
+                  ? 'bg-purple-500/20 border border-purple-500/30 text-purple-300'
+                  : (error || solanaInvestment.error)?.includes('✅') 
+                    ? 'bg-accent-green/20 border border-accent-green/30 text-accent-green'
+                    : 'bg-error/20 border border-error/30 text-error'
               }`}
             >
               <span>{error || solanaInvestment.error}</span>
@@ -457,9 +656,11 @@ export const InvestmentDashboard: React.FC = () => {
                   // Note: We can't clear solanaInvestment.error directly as it's controlled by the hook
                 }} 
                 className={`hover:opacity-70 ${
-                  (error || solanaInvestment.error)?.includes('✅') 
-                    ? 'text-accent-green'
-                    : 'text-error'
+                  (error || solanaInvestment.error)?.includes('🎭') 
+                    ? 'text-purple-300'
+                    : (error || solanaInvestment.error)?.includes('✅') 
+                      ? 'text-accent-green'
+                      : 'text-error'
                 }`}
               >
                 ×
@@ -508,8 +709,13 @@ export const InvestmentDashboard: React.FC = () => {
                 <p className="text-text-primary">$0.10 USD</p>
               </div>
               <div>
-                <p className="text-text-muted mb-1">Lock Duration:</p>
-                <p className="text-text-primary">5 minutes</p>
+                <p className="text-text-muted mb-1">Lock Ends:</p>
+                <p className="text-text-primary">
+                  {solanaInvestment.escrowData?.initializationTimestamp ? 
+                    new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString()
+                    : 'Loading...'
+                  }
+                </p>
               </div>
             </div>
           </motion.div>
@@ -581,6 +787,11 @@ export const InvestmentDashboard: React.FC = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={async () => {
+                  if (isDemoMode) {
+                    setError("🎭 Demo mode is active. Please exit demo mode to make real investments.");
+                    return;
+                  }
+                  
                   if (!investAmount || parseFloat(investAmount) < 0.001) return;
                   
                   try {
@@ -625,19 +836,46 @@ export const InvestmentDashboard: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-text-muted">Available Tokens:</span>
                   <span className="text-text-primary">
-                    {solanaInvestment.escrowData?.totalTokensAvailable || 1000} ODX
+                    {isDemoMode 
+                      ? getDemoData().escrowData?.totalTokensAvailable || 1000
+                      : solanaInvestment.escrowData?.totalTokensAvailable || 1000
+                    } ODX
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-muted">Tokens Sold:</span>
                   <span className="text-text-primary">
-                    {solanaInvestment.escrowData?.tokensSold || 0} ODX
+                    {isDemoMode 
+                      ? getDemoData().escrowData?.tokensSold || 0
+                      : solanaInvestment.escrowData?.tokensSold || 0
+                    } ODX
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-muted">Total SOL Deposited:</span>
                   <span className="text-text-primary">
-                    {solanaInvestment.escrowData?.totalSolDeposited || 0} SOL
+                    {isDemoMode 
+                      ? getDemoData().escrowData?.totalSolDeposited?.toFixed(6) || '0.000000'
+                      : solanaTransparencyStats?.totalDeposited?.toFixed(6) || '0.000000'
+                    } SOL
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Currently Locked:</span>
+                  <span className="text-warning">
+                    {isDemoMode 
+                      ? ((getDemoData().escrowData?.totalSolDeposited || 0) - (getDemoData().escrowData?.totalSolWithdrawn || 0)).toFixed(6)
+                      : solanaTransparencyStats?.totalLocked?.toFixed(6) || '0.000000'
+                    } SOL
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Released to Project:</span>
+                  <span className="text-accent-green">
+                    {isDemoMode 
+                      ? (getDemoData().escrowData?.totalSolWithdrawn || 0).toFixed(6)
+                      : solanaTransparencyStats?.totalUnlocked?.toFixed(6) || '0.000000'
+                    } SOL
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -645,9 +883,16 @@ export const InvestmentDashboard: React.FC = () => {
                   <span className="text-text-primary">$0.10 USD</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-muted">Lock Duration:</span>
+                  <span className="text-text-muted">Lock Ends:</span>
                   <span className="text-text-primary">
-                    {solanaInvestment.escrowData?.lockDuration || 300} seconds
+                    {isDemoMode 
+                      ? (getDemoData().escrowData?.initializationTimestamp 
+                          ? new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                          : 'Loading...')
+                      : (solanaInvestment.escrowData?.initializationTimestamp 
+                          ? new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                          : 'Loading...')
+                    }
                   </span>
                 </div>
               </div>
@@ -697,7 +942,7 @@ export const InvestmentDashboard: React.FC = () => {
 
 
         {/* Message when no investment found */}
-        {wallet.isConnected && solanaInvestment.hasChecked && !solanaInvestment.investorData?.isInitialized && (
+        {wallet.isConnected && solanaInvestment.hasChecked && !solanaInvestment.investorData?.isInitialized && !isDemoMode && (
           <div className="card mt-6">
             <div className="text-center py-6">
               <TrendingUp className="text-text-muted mx-auto mb-4" size={48} />
@@ -713,7 +958,7 @@ export const InvestmentDashboard: React.FC = () => {
         )}
 
         {/* Solana Investment Stats */}
-        {solanaInvestment.investorData?.isInitialized && (
+        {(solanaInvestment.investorData?.isInitialized || isDemoMode) && (
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
             {!solanaInvestment.hasChecked ? (
               <>
@@ -734,7 +979,10 @@ export const InvestmentDashboard: React.FC = () => {
                 <div>
                   <p className="text-text-muted text-sm">Total Invested</p>
                   <p className="text-xl font-semibold text-text-primary">
-                    {(solanaInvestment.investorData.solDeposited / 1e9).toFixed(4)} SOL
+                    {isDemoMode 
+                      ? (getDemoData().investorData.solDeposited / 1e9).toFixed(4)
+                      : (solanaInvestment.investorData.solDeposited / 1e9).toFixed(4)
+                    } SOL
                   </p>
                 </div>
                 <DollarSign className="text-accent-green" size={24} />
@@ -751,7 +999,10 @@ export const InvestmentDashboard: React.FC = () => {
                 <div>
                   <p className="text-text-muted text-sm">Tokens Received</p>
                   <p className="text-xl font-semibold text-text-primary">
-                    {(solanaInvestment.investorData.tokensReceived / 1e9).toFixed(2)} ODX
+                    {isDemoMode 
+                      ? (getDemoData().investorData.tokensReceived / 1e9).toFixed(2)
+                      : (solanaInvestment.investorData.tokensReceived / 1e9).toFixed(2)
+                    } ODX
                   </p>
                 </div>
                 <TrendingUp className="text-accent-green" size={24} />
@@ -768,7 +1019,10 @@ export const InvestmentDashboard: React.FC = () => {
                 <div>
                   <p className="text-text-muted text-sm">Locked Amount</p>
                   <p className="text-xl font-semibold text-text-primary">
-                    {(solanaInvestment.investorData.lockedSolAmount / 1e9).toFixed(4)} SOL
+                    {isDemoMode 
+                      ? (getDemoData().investorData.lockedSolAmount / 1e9).toFixed(4)
+                      : (solanaInvestment.investorData.lockedSolAmount / 1e9).toFixed(4)
+                    } SOL
                   </p>
                 </div>
                 <Lock className="text-warning" size={24} />
@@ -785,12 +1039,12 @@ export const InvestmentDashboard: React.FC = () => {
                 <div>
                   <p className="text-text-muted text-sm">Unlock Status</p>
                   <p className={`text-xl font-semibold ${
-                    solanaInvestment.investorData.isUnlocked ? 'text-success' : 'text-warning'
+                    (isDemoMode ? getDemoData().investorData.isUnlocked : solanaInvestment.investorData.isUnlocked) ? 'text-success' : 'text-warning'
                   }`}>
-                    {solanaInvestment.investorData.isUnlocked ? 'Unlocked' : 'Locked'}
+                    {(isDemoMode ? getDemoData().investorData.isUnlocked : solanaInvestment.investorData.isUnlocked) ? 'Unlocked' : 'Locked'}
                   </p>
                 </div>
-                {solanaInvestment.investorData.isUnlocked ? (
+                {(isDemoMode ? getDemoData().investorData.isUnlocked : solanaInvestment.investorData.isUnlocked) ? (
                   <CheckCircle className="text-success" size={24} />
                 ) : (
                   <Clock className="text-warning" size={24} />
@@ -803,7 +1057,7 @@ export const InvestmentDashboard: React.FC = () => {
         )}
 
         {/* Solana Investment Statistics */}
-        {solanaInvestment.investorData?.isInitialized && (
+        {(solanaInvestment.investorData?.isInitialized || isDemoMode) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -817,7 +1071,10 @@ export const InvestmentDashboard: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-text-muted">Total Sent by You:</span>
                   <span className="text-text-primary font-semibold">
-                    {(solanaInvestment.investorData.solDeposited / 1e9).toFixed(4)} SOL
+                    {isDemoMode 
+                      ? (getDemoData().investorData.solDeposited / 1e9).toFixed(4)
+                      : (solanaInvestment.investorData.solDeposited / 1e9).toFixed(4)
+                    } SOL
                   </span>
                 </div>
                 
@@ -825,13 +1082,19 @@ export const InvestmentDashboard: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-text-muted text-sm">→ To Project (50%):</span>
                     <span className="text-accent-green font-medium">
-                      {(solanaInvestment.investorData.solDeposited / 1e9 / 2).toFixed(4)} SOL
+                      {isDemoMode 
+                        ? (getDemoData().investorData.solDeposited / 1e9 / 2).toFixed(4)
+                        : (solanaInvestment.investorData.solDeposited / 1e9 / 2).toFixed(4)
+                      } SOL
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-text-muted text-sm">→ Time-locked (50%):</span>
                     <span className="text-warning font-medium">
-                      {(solanaInvestment.investorData.solDeposited / 1e9 / 2).toFixed(4)} SOL
+                      {isDemoMode 
+                        ? (getDemoData().investorData.solDeposited / 1e9 / 2).toFixed(4)
+                        : (solanaInvestment.investorData.solDeposited / 1e9 / 2).toFixed(4)
+                      } SOL
                     </span>
                   </div>
                 </div>
@@ -842,7 +1105,10 @@ export const InvestmentDashboard: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-text-muted">Tokens Received:</span>
                   <span className="text-text-primary font-semibold">
-                    {(solanaInvestment.investorData.tokensReceived / 1e9).toFixed(2)} ODX
+                    {isDemoMode 
+                      ? (getDemoData().investorData.tokensReceived / 1e9).toFixed(2)
+                      : (solanaInvestment.investorData.tokensReceived / 1e9).toFixed(2)
+                    } ODX
                   </span>
                 </div>
                 <div className="text-text-muted text-xs mt-1">
@@ -855,17 +1121,23 @@ export const InvestmentDashboard: React.FC = () => {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-text-muted">Currently Locked:</span>
                   <span className="text-warning font-semibold">
-                    {(solanaInvestment.investorData.lockedSolAmount / 1e9).toFixed(4)} SOL
+                    {isDemoMode 
+                      ? (getDemoData().investorData.lockedSolAmount / 1e9).toFixed(4)
+                      : (solanaInvestment.investorData.lockedSolAmount / 1e9).toFixed(4)
+                    } SOL
                   </span>
                 </div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-text-muted">Already Released:</span>
                   <span className="text-success font-semibold">
-                    {((solanaInvestment.investorData.solDeposited / 1e9 / 2) - (solanaInvestment.investorData.lockedSolAmount / 1e9)).toFixed(4)} SOL
+                    {isDemoMode 
+                      ? ((getDemoData().investorData.solDeposited / 1e9) - (getDemoData().investorData.lockedSolAmount / 1e9)).toFixed(4)
+                      : ((solanaInvestment.investorData.solDeposited / 1e9) - (solanaInvestment.investorData.lockedSolAmount / 1e9)).toFixed(4)
+                    } SOL
                   </span>
                 </div>
                 <div className="flex items-center space-x-2 mt-3">
-                  {solanaInvestment.investorData.isUnlocked ? (
+                  {(isDemoMode ? getDemoData().investorData.isUnlocked : solanaInvestment.investorData.isUnlocked) ? (
                     <>
                       <CheckCircle className="text-success" size={16} />
                       <span className="text-success text-sm">Funds unlocked - awaiting project withdrawal</span>
@@ -874,7 +1146,10 @@ export const InvestmentDashboard: React.FC = () => {
                     <>
                       <Clock className="text-warning" size={16} />
                       <span className="text-warning text-sm">
-                        Locked for {solanaInvestment.escrowData?.lockDuration || 300} seconds
+                        Locked until {isDemoMode 
+                          ? new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                          : new Date((solanaInvestment.investorData.depositTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.investorData.depositTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                        }
                       </span>
                     </>
                   )}
@@ -886,9 +1161,10 @@ export const InvestmentDashboard: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-text-muted">Investment Date:</span>
                   <span className="text-text-primary">
-                    {new Date(solanaInvestment.investorData.depositTimestamp * 1000).toLocaleDateString()} 
-                    {' '}
-                    {new Date(solanaInvestment.investorData.depositTimestamp * 1000).toLocaleTimeString()}
+                    {isDemoMode 
+                      ? new Date(getDemoData().investorData.depositTimestamp * 1000).toLocaleDateString() + ' ' + new Date(getDemoData().investorData.depositTimestamp * 1000).toLocaleTimeString()
+                      : new Date(solanaInvestment.investorData.depositTimestamp * 1000).toLocaleDateString() + ' ' + new Date(solanaInvestment.investorData.depositTimestamp * 1000).toLocaleTimeString()
+                    }
                   </span>
                 </div>
               </div>
@@ -1042,6 +1318,40 @@ export const InvestmentDashboard: React.FC = () => {
   return (
     <div className="relative max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
 
+      {/* Demo Mode Toggle */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 mb-4"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="text-purple-300">🎭</div>
+            <div>
+              <h3 className="text-purple-300 font-medium">Demo Mode</h3>
+              <p className="text-purple-400 text-sm">
+                {isDemoMode 
+                  ? "Viewing interface with demo investor data" 
+                  : "Toggle to preview investor interface with sample data"
+                }
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsDemoMode(!isDemoMode)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
+              isDemoMode ? 'bg-purple-600' : 'bg-gray-600'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                isDemoMode ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </motion.div>
+
       {/* Error Display */}
       <AnimatePresence>
         {error && (
@@ -1050,11 +1360,17 @@ export const InvestmentDashboard: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="bg-error/20 border border-error/30 text-error px-4 py-3 rounded-lg flex items-center justify-between"
+            className={`px-4 py-3 rounded-lg flex items-center justify-between ${
+              error?.includes('🎭') 
+                ? 'bg-purple-500/20 border border-purple-500/30 text-purple-300'
+                : 'bg-error/20 border border-error/30 text-error'
+            }`}
             style={getMotionStyles()}
           >
             <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-error hover:text-error/70">
+            <button onClick={() => setError(null)} className={`hover:opacity-70 ${
+              error?.includes('🎭') ? 'text-purple-300' : 'text-error'
+            }`}>
               ×
             </button>
           </motion.div>
@@ -1094,15 +1410,26 @@ export const InvestmentDashboard: React.FC = () => {
           </div>
           <div>
             <p className="text-text-muted mb-1">Token Supply:</p>
-            <p className="text-text-primary">1,000 ODX (18 decimals)</p>
+            <p className="text-text-primary">
+              {escrowStatus?.totalTokensAvailable ? parseFloat(escrowStatus.totalTokensAvailable).toFixed(0) : '10,000'} ODX (18 decimals)
+            </p>
           </div>
           <div>
             <p className="text-text-muted mb-1">Token Price:</p>
             <p className="text-text-primary">$0.10 USD</p>
           </div>
           <div>
-            <p className="text-text-muted mb-1">Lock Duration:</p>
-            <p className="text-text-primary">5 minutes</p>
+            <p className="text-text-muted mb-1">Lock Ends:</p>
+            <p className="text-text-primary">
+              {isDemoMode 
+                ? (getDemoData().transparencyStats?.nextUnlockTime 
+                    ? new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleDateString()
+                    : 'Loading...')
+                : (transparencyStats?.nextUnlockTime 
+                    ? new Date(transparencyStats.nextUnlockTime * 1000).toLocaleDateString()
+                    : 'Loading...')
+              }
+            </p>
           </div>
         </div>
       </motion.div>
@@ -1212,19 +1539,28 @@ export const InvestmentDashboard: React.FC = () => {
               <div className="flex justify-between">
                 <span className="text-text-muted">Available Tokens:</span>
                 <span className="text-text-primary">
-                  {escrowStatus?.totalTokensAvailable ? parseFloat(escrowStatus.totalTokensAvailable).toFixed(0) : 1000} ODX
+                  {isDemoMode 
+                    ? parseFloat(getDemoData().escrowStatus?.totalTokensAvailable || "10000").toFixed(0)
+                    : (escrowStatus?.totalTokensAvailable ? parseFloat(escrowStatus.totalTokensAvailable).toFixed(0) : 1000)
+                  } ODX
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Tokens Sold:</span>
                 <span className="text-text-primary">
-                  {escrowStatus?.tokensSold ? parseFloat(escrowStatus.tokensSold).toFixed(2) : 0} ODX
+                  {isDemoMode 
+                    ? parseFloat(getDemoData().escrowStatus?.tokensSold || "0").toFixed(0)
+                    : (escrowStatus?.tokensSold ? parseFloat(escrowStatus.tokensSold).toFixed(2) : 0)
+                  } ODX
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Total BNB Deposited:</span>
                 <span className="text-text-primary">
-                  {escrowStatus?.totalBnbDeposited ? parseFloat(escrowStatus.totalBnbDeposited).toFixed(4) : 0} BNB
+                  {isDemoMode 
+                    ? parseFloat(getDemoData().escrowStatus?.totalBnbDeposited || "0").toFixed(4)
+                    : (escrowStatus?.totalBnbDeposited ? parseFloat(escrowStatus.totalBnbDeposited).toFixed(4) : 0)
+                  } BNB
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1232,11 +1568,52 @@ export const InvestmentDashboard: React.FC = () => {
                 <span className="text-text-primary">$0.10 USD</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-text-muted">Lock Duration:</span>
+                <span className="text-text-muted">Lock Ends:</span>
                 <span className="text-text-primary">
-                  {escrowStatus?.lockDuration ? Math.floor(escrowStatus.lockDuration / 60) : 5} minutes
+                  {isDemoMode 
+                    ? (getDemoData().transparencyStats?.nextUnlockTime 
+                        ? new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleDateString() + ' ' + new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleTimeString()
+                        : 'Loading...')
+                    : (transparencyStats?.nextUnlockTime 
+                        ? new Date(transparencyStats.nextUnlockTime * 1000).toLocaleDateString() + ' ' + new Date(transparencyStats.nextUnlockTime * 1000).toLocaleTimeString()
+                        : 'Loading...')
+                  }
                 </span>
               </div>
+              
+              {/* NEW: Transparency stats */}
+              {(transparencyStats || isDemoMode) && (
+                <>
+                  <div className="border-t border-border-dark my-3"></div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Total Deposited:</span>
+                    <span className="text-text-primary">
+                      {isDemoMode 
+                        ? parseFloat(getDemoData().transparencyStats?.totalDeposited || "0").toFixed(6)
+                        : parseFloat(transparencyStats.totalDeposited).toFixed(6)
+                      } BNB
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Currently Locked:</span>
+                    <span className="text-warning">
+                      {isDemoMode 
+                        ? parseFloat(getDemoData().transparencyStats?.totalLocked || "0").toFixed(6)
+                        : parseFloat(transparencyStats.totalLocked).toFixed(6)
+                      } BNB
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Released to Project:</span>
+                    <span className="text-accent-green">
+                      {isDemoMode 
+                        ? (parseFloat(getDemoData().transparencyStats?.totalDeposited || "0") - parseFloat(getDemoData().transparencyStats?.totalLocked || "0")).toFixed(6)
+                        : (parseFloat(transparencyStats.totalDeposited) - parseFloat(transparencyStats.totalLocked)).toFixed(6)
+                      } BNB
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -1280,7 +1657,7 @@ export const InvestmentDashboard: React.FC = () => {
 
 
       {/* Message when no investment found */}
-      {wallet.isConnected && wallet.chain === 'bnb' && hasCheckedData && !investorData?.isInitialized && (
+      {wallet.isConnected && wallet.chain === 'bnb' && hasCheckedData && !investorData?.isInitialized && !isDemoMode && (
         <div className="card mt-6">
           <div className="text-center py-6">
             <TrendingUp className="text-text-muted mx-auto mb-4" size={48} />
@@ -1296,7 +1673,7 @@ export const InvestmentDashboard: React.FC = () => {
       )}
 
       {/* BNB Investment Stats Cards */}
-      {investorData?.isInitialized && (
+      {(investorData?.isInitialized || isDemoMode) && (
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -1308,7 +1685,10 @@ export const InvestmentDashboard: React.FC = () => {
               <div>
                 <p className="text-text-muted text-sm">Total Invested</p>
                 <p className="text-xl font-semibold text-text-primary">
-                  {parseFloat(investorData.bnbDeposited).toFixed(4)} BNB
+                  {isDemoMode 
+                    ? getDemoData().investorData.bnbDeposited
+                    : parseFloat(investorData.bnbDeposited).toFixed(4)
+                  } BNB
                 </p>
               </div>
               <DollarSign className="text-accent-green" size={24} />
@@ -1325,7 +1705,10 @@ export const InvestmentDashboard: React.FC = () => {
               <div>
                 <p className="text-text-muted text-sm">Tokens Received</p>
                 <p className="text-xl font-semibold text-text-primary">
-                  {parseFloat(investorData.tokensReceived).toFixed(2)} ODX
+                  {isDemoMode 
+                    ? getDemoData().investorData.tokensReceived
+                    : parseFloat(investorData.tokensReceived).toFixed(2)
+                  } ODX
                 </p>
               </div>
               <TrendingUp className="text-accent-green" size={24} />
@@ -1342,7 +1725,10 @@ export const InvestmentDashboard: React.FC = () => {
               <div>
                 <p className="text-text-muted text-sm">Locked Amount</p>
                 <p className="text-xl font-semibold text-text-primary">
-                  {parseFloat(investorData.lockedBnbAmount).toFixed(4)} BNB
+                  {isDemoMode 
+                    ? getDemoData().investorData.lockedBnbAmount
+                    : parseFloat(investorData.lockedBnbAmount).toFixed(4)
+                  } BNB
                 </p>
               </div>
               <Lock className="text-warning" size={24} />
@@ -1359,12 +1745,12 @@ export const InvestmentDashboard: React.FC = () => {
               <div>
                 <p className="text-text-muted text-sm">Unlock Status</p>
                 <p className={`text-xl font-semibold ${
-                  investorData.isUnlocked ? 'text-success' : 'text-warning'
+                  (isDemoMode ? getDemoData().investorData.isUnlocked : investorData.isUnlocked) ? 'text-success' : 'text-warning'
                 }`}>
-                  {investorData.isUnlocked ? 'Unlocked' : 'Locked'}
+                  {(isDemoMode ? getDemoData().investorData.isUnlocked : investorData.isUnlocked) ? 'Unlocked' : 'Locked'}
                 </p>
               </div>
-              {investorData.isUnlocked ? (
+              {(isDemoMode ? getDemoData().investorData.isUnlocked : investorData.isUnlocked) ? (
                 <CheckCircle className="text-success" size={24} />
               ) : (
                 <Clock className="text-warning" size={24} />
@@ -1375,7 +1761,7 @@ export const InvestmentDashboard: React.FC = () => {
       )}
 
       {/* BNB Investment Statistics */}
-      {investorData?.isInitialized && (
+      {(investorData?.isInitialized || isDemoMode) && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1389,7 +1775,10 @@ export const InvestmentDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-text-muted">Total Sent by You:</span>
                 <span className="text-text-primary font-semibold">
-                  {parseFloat(investorData.bnbDeposited).toFixed(4)} BNB
+                  {isDemoMode 
+                    ? getDemoData().investorData.bnbDeposited
+                    : parseFloat(investorData.bnbDeposited).toFixed(4)
+                  } BNB
                 </span>
               </div>
               
@@ -1397,13 +1786,19 @@ export const InvestmentDashboard: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-text-muted text-sm">→ To Project (50%):</span>
                   <span className="text-accent-green font-medium">
-                    {(parseFloat(investorData.bnbDeposited) / 2).toFixed(4)} BNB
+                    {isDemoMode 
+                      ? (parseFloat(getDemoData().investorData.bnbDeposited) / 2).toFixed(4)
+                      : (parseFloat(investorData.bnbDeposited) / 2).toFixed(4)
+                    } BNB
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-text-muted text-sm">→ Time-locked (50%):</span>
                   <span className="text-warning font-medium">
-                    {(parseFloat(investorData.bnbDeposited) / 2).toFixed(4)} BNB
+                    {isDemoMode 
+                      ? (parseFloat(getDemoData().investorData.bnbDeposited) / 2).toFixed(4)
+                      : (parseFloat(investorData.bnbDeposited) / 2).toFixed(4)
+                    } BNB
                   </span>
                 </div>
               </div>
@@ -1414,7 +1809,10 @@ export const InvestmentDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-text-muted">Tokens Received:</span>
                 <span className="text-text-primary font-semibold">
-                  {parseFloat(investorData.tokensReceived).toFixed(2)} ODX
+                  {isDemoMode 
+                    ? getDemoData().investorData.tokensReceived
+                    : parseFloat(investorData.tokensReceived).toFixed(2)
+                  } ODX
                 </span>
               </div>
               <div className="text-text-muted text-xs mt-1">
@@ -1427,17 +1825,23 @@ export const InvestmentDashboard: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-text-muted">Currently Locked:</span>
                 <span className="text-warning font-semibold">
-                  {parseFloat(investorData.lockedBnbAmount).toFixed(4)} BNB
+                  {isDemoMode 
+                    ? getDemoData().investorData.lockedBnbAmount
+                    : parseFloat(investorData.lockedBnbAmount).toFixed(4)
+                  } BNB
                 </span>
               </div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-text-muted">Already Released:</span>
                 <span className="text-success font-semibold">
-                  {(parseFloat(investorData.bnbDeposited) / 2 - parseFloat(investorData.lockedBnbAmount)).toFixed(4)} BNB
+                  {isDemoMode 
+                    ? (parseFloat(getDemoData().investorData.bnbDeposited) - parseFloat(getDemoData().investorData.lockedBnbAmount)).toFixed(4)
+                    : (parseFloat(investorData.bnbDeposited) - parseFloat(investorData.lockedBnbAmount)).toFixed(4)
+                  } BNB
                 </span>
               </div>
               <div className="flex items-center space-x-2 mt-3">
-                {investorData.isUnlocked ? (
+                {(isDemoMode ? getDemoData().investorData.isUnlocked : investorData.isUnlocked) ? (
                   <>
                     <CheckCircle className="text-success" size={16} />
                     <span className="text-success text-sm">Funds unlocked - awaiting project withdrawal</span>
@@ -1445,7 +1849,16 @@ export const InvestmentDashboard: React.FC = () => {
                 ) : (
                   <>
                     <Clock className="text-warning" size={16} />
-                    <span className="text-warning text-sm">Unlock in {unlockTimer}</span>
+                    <span className="text-warning text-sm">
+                      Locked until {isDemoMode 
+                        ? (getDemoData().investorData.depositTimestamp > 0 
+                            ? new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowStatus?.lockDuration || 14400)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowStatus?.lockDuration || 14400)) * 1000).toLocaleTimeString()
+                            : 'Unknown')
+                        : (investorData.depositTimestamp > 0 
+                            ? new Date((investorData.depositTimestamp + (escrowStatus?.lockDuration || 14400)) * 1000).toLocaleDateString() + ' ' + new Date((investorData.depositTimestamp + (escrowStatus?.lockDuration || 14400)) * 1000).toLocaleTimeString()
+                            : 'Unknown')
+                      }
+                    </span>
                   </>
                 )}
               </div>
@@ -1456,9 +1869,10 @@ export const InvestmentDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-text-muted">Investment Date:</span>
                 <span className="text-text-primary">
-                  {new Date(investorData.depositTimestamp * 1000).toLocaleDateString()} 
-                  {' '}
-                  {new Date(investorData.depositTimestamp * 1000).toLocaleTimeString()}
+                  {isDemoMode 
+                    ? new Date(getDemoData().investorData.depositTimestamp * 1000).toLocaleDateString() + ' ' + new Date(getDemoData().investorData.depositTimestamp * 1000).toLocaleTimeString()
+                    : new Date(investorData.depositTimestamp * 1000).toLocaleDateString() + ' ' + new Date(investorData.depositTimestamp * 1000).toLocaleTimeString()
+                  }
                 </span>
               </div>
             </div>
@@ -1538,7 +1952,7 @@ export const InvestmentDashboard: React.FC = () => {
 
 
       {/* Message when no investment found */}
-      {wallet.isConnected && wallet.chain === 'bnb' && hasCheckedData && !investorData?.isInitialized && (
+      {wallet.isConnected && wallet.chain === 'bnb' && hasCheckedData && !investorData?.isInitialized && !isDemoMode && (
         <div className="card mt-6">
           <div className="text-center py-6">
             <TrendingUp className="text-text-muted mx-auto mb-4" size={48} />

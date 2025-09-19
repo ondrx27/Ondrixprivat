@@ -466,6 +466,71 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
         );
     }
 
+    /**
+     * @dev Get total BNB deposited across all investors
+     */
+    function totalDeposited() external view returns (uint256) {
+        return globalEscrow.totalBnbDeposited;
+    }
+
+    /**
+     * @dev Get total BNB that has been unlocked and withdrawn
+     */
+    function totalUnlocked() external view returns (uint256) {
+        return globalEscrow.totalBnbWithdrawn;
+    }
+
+    /**
+     * @dev Get total BNB currently locked across all investors
+     */
+    function totalLocked() external view returns (uint256) {
+        // Total locked = Total deposited - Total withdrawn - Immediate payments (50%)
+        uint256 immediatePayments = globalEscrow.totalBnbDeposited / 2;
+        return globalEscrow.totalBnbDeposited - globalEscrow.totalBnbWithdrawn - immediatePayments;
+    }
+
+    /**
+     * @dev Get the next unlock time for a specific investor
+     */
+    function nextUnlockTime(address _investor) external view returns (uint256) {
+        InvestorAccount memory investor = investorAccounts[_investor];
+        if (!investor.isInitialized) return 0;
+        if (investor.status == InvestorStatus.BnbWithdrawn) return 0; // Already withdrawn
+        return investor.depositTimestamp + globalEscrow.lockDuration;
+    }
+
+    /**
+     * @dev Get comprehensive lock status for an investor
+     */
+    function getInvestorLockStatus(address _investor) external view returns (
+        uint256 totalInvested,
+        uint256 immediateAmount,
+        uint256 lockedAmount,
+        uint256 unlockTime,
+        bool isUnlocked,
+        uint256 timeRemaining
+    ) {
+        InvestorAccount memory investor = investorAccounts[_investor];
+        
+        if (!investor.isInitialized) {
+            return (0, 0, 0, 0, false, 0);
+        }
+        
+        totalInvested = investor.bnbDeposited;
+        immediateAmount = totalInvested / 2; // 50% immediate
+        lockedAmount = investor.lockedBnbAmount;
+        unlockTime = investor.depositTimestamp + globalEscrow.lockDuration;
+        isUnlocked = block.timestamp >= unlockTime || investor.status == InvestorStatus.BnbWithdrawn;
+        
+        if (isUnlocked) {
+            timeRemaining = 0;
+        } else {
+            timeRemaining = unlockTime - block.timestamp;
+        }
+        
+        return (totalInvested, immediateAmount, lockedAmount, unlockTime, isUnlocked, timeRemaining);
+    }
+
     // SECURITY: Circuit breaker functions
     function activateEmergencyStop() external onlyOwner {
         emergencyStop = true;

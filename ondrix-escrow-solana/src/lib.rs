@@ -97,11 +97,9 @@ pub struct GlobalEscrow {
     pub lock_duration: i64,           // Lock duration in seconds
     pub bump_seed: u8,
     
-    // IMMUTABLE ORACLE CONFIG 
     pub oracle_program_id: Pubkey,    // Chainlink oracle program
     pub price_feed_pubkey: Pubkey,    // SOL/USD price feed
     
-    // IMMUTABLE CONFIG VALUES 
     pub min_sol_investment: u64,      // Minimum SOL investment
     pub max_sol_investment: u64,      // Maximum SOL per address
     pub price_staleness_threshold: u64, // Price staleness in seconds
@@ -214,7 +212,7 @@ pub enum EscrowInstruction {
     /// 7. `[]` Associated token program
     /// 8. `[]` System program
     /// 9. `[]` Rent sysvar
-    /// 10. `[]` Oracle program 
+    /// 10. `[]` Oracle program
     /// 11. `[]` Price feed
     InitializeEscrow { 
         token_amount: u64, 
@@ -597,11 +595,11 @@ pub fn process_initialize_escrow(
         lock_duration,
         bump_seed,
         
-        // IMMUTABLE ORACLE CONFIG 
+        // IMMUTABLE ORACLE CONFIG
         oracle_program_id: *oracle_program.key,
         price_feed_pubkey: *price_feed.key,
         
-        // IMMUTABLE CONFIG VALUES 
+        // IMMUTABLE CONFIG VALUES
         min_sol_investment,
         max_sol_investment,
         price_staleness_threshold,
@@ -706,7 +704,7 @@ pub fn process_deposit_sol(
         )?;
     }
 
-    // STRICT ATA VALIDATION 
+    // STRICT ATA VALIDATION
     // Now validate the token account (after creation if needed)
     let token_account_data = spl_token::state::Account::unpack(&investor_token_account.data.borrow())?;
     
@@ -822,7 +820,6 @@ pub fn process_deposit_sol(
         // Update existing investor account
         let mut existing_data = InvestorAccount::try_from_slice(&investor_account.data.borrow())?;
         
-        // SECURITY: Check maximum investment limit for existing investor using immutable config
         let total_investment = existing_data.sol_deposited + sol_amount;
         if total_investment > global_escrow.max_sol_investment {
             return Err(EscrowError::InvestmentExceedsMaximum.into());
@@ -974,7 +971,7 @@ pub fn process_withdraw_locked_sol(
         return Err(EscrowError::NoSolToWithdraw.into());
     }
     
-    // SECURITY: Only recipient_wallet can withdraw locked SOL 
+    // SECURITY: Only recipient_wallet can withdraw locked SOL
     if withdrawer.key != &global_escrow.recipient_wallet {
         return Err(EscrowError::Unauthorized.into());
     }

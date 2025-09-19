@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Shield, Lock, Clock, TrendingUp, CheckCircle } from 'lucide-react';
+import { GlobalLockStatus } from './GlobalLockStatus';
 
 export const LandingPage: React.FC = () => {
   const features = [
@@ -100,6 +101,27 @@ export const LandingPage: React.FC = () => {
             </motion.div>
           ))}
         </div>
+      </motion.section>
+
+      {/* Global Lock Status */}
+      <motion.section
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="space-y-8"
+      >
+        <motion.div variants={itemVariants} className="text-center">
+          <h2 className="text-3xl md:text-4xl font-bold text-text-primary mb-4">
+            Live <span className="gradient-text">Transparency</span> Status
+          </h2>
+          <p className="text-text-secondary max-w-2xl mx-auto">
+            Real-time data from the smart contract showing current lock status and unlock progress.
+          </p>
+        </motion.div>
+        
+        <motion.div variants={itemVariants}>
+          <GlobalLockStatus />
+        </motion.div>
       </motion.section>
 
       {/* How It Works */}

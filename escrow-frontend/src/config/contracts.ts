@@ -2,13 +2,13 @@ import { ContractAddresses, NetworkInfo } from '../types';
 
 export const CONTRACTS: ContractAddresses = {
   solana: {
-    programId: "B3E513xm5sMJ3gJM6CxukpwW1hvNDXK4qireHLaT54dm", // New Solana program with 0.001 SOL minimum
-    globalEscrow: "FuTysuyjyYmZxsTwK1b2qfPnhu5K2ijwWyb3nHj8DnV4", // FIXED: Global Escrow with 0.001 SOL minimum
-    tokenMint: "BuADRo6dtezwqPwoK6ich4R3V7GqtSNDZPMTfcRZVv4E", // FIXED: Token mint (1000 tokens, 9 decimals)
+    programId: "9kaoCE6mLVUvvAkSkE4UbPkwb6fy7yfuDq78zGsRUVoS", // New Solana program with initialization-based timer
+    globalEscrow: "Cc7Yquecy9YUBwRbiNXqjtL5yAVcqTmyaa7ETV2y3cTC", // New Global Escrow with initialization-based timer
+    tokenMint: "GgSUXk3vge5kVnZ7JiV1njAJ3mCpcrqBWcpG8ohWFTL2", // New Token mint with initialization timer
   },
   bnb: {
-    escrow: "0xC37Bb6B20eE13E59B6ac4A21D3D35bDD2Cc98f7C", // FIXED: Working deployment with 0.001 BNB minimum
-    token: "0xD0E3c0366BE2d7Df1d9E2b05ee2BA85b1A892bA8", // Mock ODX token for testing (10,000 supply)
+    escrow: "0xf9b69Ac0d53F06BE4dd0ED4Da2760670d1772981", // FIXED: Contract with 4 hour lock, working price feed
+    token: "0x4d4a1993a27855d800c68CE464dEEFC7f598Af89", // FIXED: Mock ODX token for testing
     priceFeed: "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526", // BSC Testnet Chainlink BNB/USD
   }
 };
@@ -49,6 +49,13 @@ export const ESCROW_ABI = [
   "function getPendingWithdrawal(address user) view returns (uint256)",
   "function emergencyStop() view returns (bool)",
   "function getChainlinkPrice() view returns (uint256 price, uint256 timestamp)",
+  
+  // NEW: Transparency functions for lock status
+  "function totalDeposited() view returns (uint256)",
+  "function totalUnlocked() view returns (uint256)", 
+  "function totalLocked() view returns (uint256)",
+  "function nextUnlockTime(address investor) view returns (uint256)",
+  "function getInvestorLockStatus(address investor) view returns (uint256 totalInvested, uint256 immediateAmount, uint256 lockedAmount, uint256 unlockTime, bool isUnlocked, uint256 timeRemaining)",
   
   // Write functions
   "function depositBnb() payable",
