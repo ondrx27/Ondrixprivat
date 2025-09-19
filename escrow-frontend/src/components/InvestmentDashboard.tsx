@@ -112,12 +112,13 @@ export const InvestmentDashboard: React.FC = () => {
         }
       };
     } else {
-      // BNB demo data
+      // BNB demo data - FIXED: Use initialization timestamp 
       const bnbPrice = currentBnbPrice;
       const investmentBnb = 1.0; // 1 BNB investment  
       const tokensReceived = (investmentBnb * bnbPrice) / 0.10; // tokens at $0.10 each
       const lockDuration = 14400; // 4 hours for BNB
-      const unlockTime = depositTime + lockDuration;
+      const initializationTime = currentTime - 7200; // Contract initialized 2 hours ago
+      const unlockTime = initializationTime + lockDuration; // GLOBAL unlock time
       const isUnlocked = currentTime >= unlockTime;
       
       return {
@@ -145,7 +146,8 @@ export const InvestmentDashboard: React.FC = () => {
           totalDeposited: "12.5", // Total deposited
           totalUnlocked: "6.25", // 50% released to project
           totalLocked: "6.25", // 50% still locked
-          nextUnlockTime: unlockTime
+          nextUnlockTime: unlockTime, // GLOBAL unlock time from initialization
+          initializationTimestamp: initializationTime // Add initialization timestamp
         }
       };
     }
@@ -197,46 +199,41 @@ export const InvestmentDashboard: React.FC = () => {
       // Reset check status when wallet/chain changes
       setHasCheckedData(false);
       
-      // Add a small delay when switching to BNB to allow wallet state to settle
+      // Load data once when switching networks
       const timer = setTimeout(() => {
         fetchData();
-        
-        // Only set up interval after successful initial fetch
-        const interval = setInterval(() => {
-          // Double-check we're still on BNB chain before fetching
-          if (wallet.chain === 'bnb' && wallet.address?.startsWith('0x')) {
-            fetchData();
-          }
-        }, 5000);
-        
-        return () => clearInterval(interval);
-      }, wallet.chain === 'bnb' ? 1000 : 0); // 1 second delay for BNB switching
+      }, wallet.chain === 'bnb' ? 1000 : 0); // Small delay for BNB switching
       
       return () => clearTimeout(timer);
     }
   }, [wallet.isConnected, wallet.address, wallet.chain, wallet.reownAddress]);
 
-  // Unlock timer
+  // FIXED: Global unlock timer based on initialization timestamp
   useEffect(() => {
-    if (investorData && investorData.depositTimestamp > 0 && !investorData.isUnlocked) {
+    if (investorData && investorData.isInitialized && !investorData.isUnlocked && transparencyStats?.nextUnlockTime) {
       const interval = setInterval(() => {
         const now = Date.now() / 1000;
-        const unlockTime = investorData.depositTimestamp + (5 * 60); // 5 minutes
+        const unlockTime = transparencyStats.nextUnlockTime; // GLOBAL unlock time from initialization
         const remaining = unlockTime - now;
         
         if (remaining <= 0) {
           setUnlockTimer('Unlocked!');
-          fetchData(); // Refresh data when unlocked
         } else {
-          const minutes = Math.floor(remaining / 60);
+          const hours = Math.floor(remaining / 3600);
+          const minutes = Math.floor((remaining % 3600) / 60);
           const seconds = Math.floor(remaining % 60);
-          setUnlockTimer(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+          
+          if (hours > 0) {
+            setUnlockTimer(`${hours}h ${minutes}m ${seconds}s`);
+          } else {
+            setUnlockTimer(`${minutes}m ${seconds}s`);
+          }
         }
       }, 1000);
       
       return () => clearInterval(interval);
     }
-  }, [investorData]);
+  }, [investorData, transparencyStats]);
 
   // Update BNB price periodically
   useEffect(() => {
@@ -270,9 +267,7 @@ export const InvestmentDashboard: React.FC = () => {
 
       loadSolanaTransparency();
       
-      // Update every 10 seconds
-      const interval = setInterval(loadSolanaTransparency, 10000);
-      return () => clearInterval(interval);
+      // Load once on network change only - no auto-refresh
     }
   }, [wallet.chain]);
 
@@ -324,42 +319,35 @@ export const InvestmentDashboard: React.FC = () => {
         lockDuration: Number(status.lockDuration || 0),
       });
 
-      // Fetch transparency statistics
+      // Fetch transparency statistics with FIXED global unlock time
       try {
-        const [totalDeposited, totalUnlocked, totalLocked] = await Promise.all([
+        const [totalDeposited, totalUnlocked, totalLocked, initTimestamp, escrowStatus] = await Promise.all([
           escrowContract.totalDeposited(),
           escrowContract.totalUnlocked(), 
-          escrowContract.totalLocked()
+          escrowContract.totalLocked(),
+          escrowContract.getInitializationTimestamp(),
+          escrowContract.getEscrowStatus()
         ]);
 
-        // Try to get next unlock time from a real investor
-        let nextUnlockTime = 0;
-        const potentialAddresses = [
-          "0x017ae1B2116dE27d3Fd9A89004604ef0e3658df3", // Real investor
-          "0x752669e07416E42b318471Eea005f7c9A7828ADF", // Fallback
-          wallet.address // Current user
-        ];
+        // Calculate GLOBAL unlock time from initialization timestamp
+        const initializationTimestamp = Number(initTimestamp);
+        const lockDuration = Number(escrowStatus.lockDuration);
+        const nextUnlockTime = initializationTimestamp + lockDuration;
         
-        for (const address of potentialAddresses) {
-          try {
-            const investorInfo = await escrowContract.getInvestorInfo(address);
-            const bnbDeposited = Number(ethers.formatEther(investorInfo[1] || 0));
-            
-            if (bnbDeposited > 0) {
-              const unlockTime = await escrowContract.nextUnlockTime(address);
-              nextUnlockTime = Number(unlockTime);
-              break;
-            }
-          } catch (err) {
-            // Continue to next address
-          }
-        }
+        console.log('🔒 BNB unlock time calculation (FIXED):', {
+          initializationTimestamp,
+          lockDuration,
+          nextUnlockTime,
+          currentTime: Math.floor(Date.now() / 1000),
+          unlockDate: new Date(nextUnlockTime * 1000).toLocaleString()
+        });
 
         setTransparencyStats({
           totalDeposited: ethers.formatEther(totalDeposited),
           totalUnlocked: ethers.formatEther(totalUnlocked),
           totalLocked: ethers.formatEther(totalLocked),
-          nextUnlockTime
+          nextUnlockTime,
+          initializationTimestamp // Add initialization timestamp
         });
         
         console.log('📊 Transparency stats loaded:', {

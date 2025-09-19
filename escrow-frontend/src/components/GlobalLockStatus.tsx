@@ -11,11 +11,13 @@ interface GlobalLockData {
   totalUnlocked: string;
   totalLocked: string;
   nextUnlockTime: number;
-  progress: number; // Процент прошедшего времени
+  progress: number;
   timeUntilNextUnlock: number;
-  lockDuration: number; // Длительность блокировки в секундах
+  lockDuration: number;
   network: 'bnb' | 'solana';
-  currency: string; // 'BNB' или 'SOL'
+  currency: string;
+  initializationTimestamp: number;
+  isFullyUnlocked: boolean;
 }
 
 export const GlobalLockStatus: React.FC = () => {
@@ -40,176 +42,128 @@ export const GlobalLockStatus: React.FC = () => {
   };
 
   const fetchBnbLockStatus = async () => {
-    // Используем прямое подключение к BSC testnet
     const provider = new ethers.JsonRpcProvider('https://data-seed-prebsc-1-s1.binance.org:8545');
     const contract = new ethers.Contract(CONTRACTS.bnb.escrow, ESCROW_ABI, provider);
 
-      // Получаем глобальные данные и информацию о блокировке
-      const [totalDeposited, totalUnlocked, totalLocked, escrowStatus] = await Promise.all([
+    try {
+      // Get contract data and initialization timestamp
+      const [totalDeposited, totalUnlocked, totalLocked, escrowStatus, initializationTimestamp] = await Promise.all([
         contract.totalDeposited(),
         contract.totalUnlocked(), 
         contract.totalLocked(),
-        contract.getEscrowStatus()
+        contract.getEscrowStatus(),
+        contract.getInitializationTimestamp()
       ]);
       
-      const lockDuration = Number(escrowStatus[5]) || 14400; // lockDuration из контракта, fallback 4 часа
-
-      // Найти реального инвестора и получить время разблокировки
-      const potentialAddresses = [
-        "0x017ae1B2116dE27d3Fd9A89004604ef0e3658df3", // Реальный инвестор
-        "0x752669e07416E42b318471Eea005f7c9A7828ADF", // Fallback
-      ];
+      const lockDuration = Number(escrowStatus[5]) || 14400;
+      const currentTime = Math.floor(Date.now() / 1000);
+      const initTimestamp = Number(initializationTimestamp);
       
-      let nextUnlockTime = 0;
-      let investorFound = false;
+      // Calculate timing based on initialization
+      const unlockTime = initTimestamp + lockDuration;
+      const hasUnlockTimePassed = currentTime >= unlockTime;
+      const timeUntilNextUnlock = Math.max(0, unlockTime - currentTime);
       
-      // Ищем инвестора с депозитом
-      for (const address of potentialAddresses) {
-        try {
-          const investorInfo = await contract.getInvestorInfo(address);
-          const bnbDeposited = Number(ethers.formatEther(investorInfo[1] || 0));
-          
-          if (bnbDeposited > 0) {
-            console.log('Found investor:', address, 'with', bnbDeposited, 'BNB');
-            const unlockTime = await contract.nextUnlockTime(address);
-            nextUnlockTime = Number(unlockTime);
-            investorFound = true;
-            console.log('Next unlock time:', nextUnlockTime, 'timestamp');
-            break;
-          }
-        } catch (err) {
-          console.log('Could not check address:', address, err);
-        }
+      // Calculate progress
+      let progress = 0;
+      if (initTimestamp > 0) {
+        const elapsed = currentTime - initTimestamp;
+        progress = Math.min(100, Math.max(0, (elapsed / lockDuration) * 100));
       }
       
-      if (!investorFound) {
-        console.log('No investor found, using lockDuration for demo');
-        // Fallback: используем текущее время + lockDuration для демонстрации
-        const escrowStatus = await contract.getEscrowStatus();
-        const lockDuration = Number(escrowStatus[5]) || 14400; // 4 hours
-        nextUnlockTime = Math.floor(Date.now() / 1000) + lockDuration;
-      }
-
       const totalDepositedFormatted = ethers.formatEther(totalDeposited);
       const totalUnlockedFormatted = ethers.formatEther(totalUnlocked);
       const totalLockedFormatted = ethers.formatEther(totalLocked);
-
-      // Вычисляем прогресс времени (сколько времени прошло до разблокировки)
-      let progress = 0;
-      if (nextUnlockTime > 0) {
-        const currentTime = Math.floor(Date.now() / 1000);
-        const unlockTime = nextUnlockTime;
-        const startTime = unlockTime - lockDuration;
-        
-        if (currentTime >= unlockTime) {
-          progress = 100; // Полностью разблокировано
-        } else if (currentTime >= startTime) {
-          const elapsed = currentTime - startTime;
-          progress = (elapsed / lockDuration) * 100;
-        } else {
-          progress = 0; // Еще не началась блокировка
-        }
-      }
-
-      // Время до следующей разблокировки
-      const currentTime = Math.floor(Date.now() / 1000);
-      const timeUntilNextUnlock = Math.max(0, nextUnlockTime - currentTime);
+      
+      console.log('🔒 BNB lock status (FIXED):', {
+        totalDeposited: totalDepositedFormatted,
+        totalUnlocked: totalUnlockedFormatted,
+        totalLocked: totalLockedFormatted,
+        initializationTimestamp: initTimestamp,
+        unlockTime,
+        hasUnlockTimePassed,
+        progress: progress.toFixed(1),
+        timeUntilNextUnlock
+      });
 
       setLockData({
         totalDeposited: totalDepositedFormatted,
         totalUnlocked: totalUnlockedFormatted,
         totalLocked: totalLockedFormatted,
-        nextUnlockTime,
+        nextUnlockTime: unlockTime,
         progress,
         timeUntilNextUnlock,
         lockDuration,
         network: 'bnb',
-        currency: 'BNB'
+        currency: 'BNB',
+        initializationTimestamp: initTimestamp,
+        isFullyUnlocked: hasUnlockTimePassed && parseFloat(totalLockedFormatted) <= 0
       });
+    } catch (error) {
+      console.error('Error fetching BNB lock status:', error);
+      throw error;
+    }
   };
 
   const fetchSolanaLockStatus = async () => {
     console.log('📊 Fetching Solana lock status from smart contract...');
     
     try {
-      // Get transparency data directly from smart contract
-      const transparencyData = await getSolanaTransparencyData();
-      const escrowData = await getSolanaEscrowStatus();
+      // Get all data from contract using unified approach
+      const [transparencyData, escrowData, nextUnlockTime] = await Promise.all([
+        getSolanaTransparencyData(),
+        getSolanaEscrowStatus(),
+        getSolanaNextUnlockTime()
+      ]);
+      
+      const currentTime = Math.floor(Date.now() / 1000);
+      const timeUntilNextUnlock = Math.max(0, nextUnlockTime - currentTime);
+      const hasUnlockTimePassed = currentTime >= nextUnlockTime;
+      
+      // Calculate progress based on initialization timestamp
+      let progress = 0;
+      if (escrowData.initializationTimestamp > 0 && escrowData.lockDuration > 0) {
+        const elapsed = currentTime - escrowData.initializationTimestamp;
+        progress = Math.min(100, Math.max(0, (elapsed / escrowData.lockDuration) * 100));
+      }
       
       const totalDepositedFormatted = transparencyData.totalDeposited.toFixed(6);
       const totalUnlockedFormatted = transparencyData.totalUnlocked.toFixed(6);
       const totalLockedFormatted = transparencyData.totalLocked.toFixed(6);
       
-      // Use lock duration from contract (should be 4 hours = 14400 seconds)
-      const lockDuration = escrowData.lockDuration || 14400; // fallback 4 hours
-      
-      // Get real unlock time based on contract initialization
-      const nextUnlockTime = await getSolanaNextUnlockTime();
-      const currentTime = Math.floor(Date.now() / 1000);
-      const timeUntilNextUnlock = Math.max(0, nextUnlockTime - currentTime);
-      
-      // Calculate time progress based on initialization time
-      let progress = 0;
-      if (nextUnlockTime > 0 && escrowData.initializationTimestamp) {
-        const startTime = escrowData.initializationTimestamp;
-        if (currentTime >= nextUnlockTime) {
-          progress = 100;
-        } else if (currentTime >= startTime) {
-          const elapsed = currentTime - startTime;
-          progress = (elapsed / lockDuration) * 100;
-        }
-      }
-      
-      setLockData({
-        totalDeposited: totalDepositedFormatted,
-        totalUnlocked: totalUnlockedFormatted, // from contract calculation
-        totalLocked: totalLockedFormatted,      // from contract calculation
-        nextUnlockTime,
-        progress,
-        timeUntilNextUnlock,
-        lockDuration,
-        network: 'solana',
-        currency: 'SOL'
-      });
-      
-      console.log('📊 Solana transparency stats (from contract):', {
+      console.log('📊 Solana lock status:', {
         totalDeposited: totalDepositedFormatted,
         totalUnlocked: totalUnlockedFormatted,
         totalLocked: totalLockedFormatted,
-        lockDuration: `${lockDuration}s (${lockDuration/3600}h)`
+        initializationTimestamp: escrowData.initializationTimestamp,
+        nextUnlockTime,
+        hasUnlockTimePassed,
+        progress: progress.toFixed(1),
+        timeUntilNextUnlock
       });
-    } catch (error) {
-      console.error('Error fetching Solana transparency data:', error);
-      // Fallback to old method if new transparency functions fail
-      const escrowData = await getSolanaEscrowStatus();
-      
-      const totalDepositedFormatted = escrowData.totalSolDeposited.toFixed(6);
-      const totalWithdrawnFormatted = escrowData.totalSolWithdrawn.toFixed(6);
-      const currentlyLocked = escrowData.totalSolDeposited - escrowData.totalSolWithdrawn;
-      const totalLockedFormatted = currentlyLocked.toFixed(6);
-      
-      // Fallback with initialization-based timer if available
-      const fallbackNextUnlock = escrowData.initializationTimestamp 
-        ? escrowData.initializationTimestamp + (escrowData.lockDuration || 14400)
-        : Math.floor(Date.now() / 1000) + (escrowData.lockDuration || 14400);
       
       setLockData({
         totalDeposited: totalDepositedFormatted,
-        totalUnlocked: totalWithdrawnFormatted,
+        totalUnlocked: totalUnlockedFormatted,
         totalLocked: totalLockedFormatted,
-        nextUnlockTime: fallbackNextUnlock,
-        progress: 0,
-        timeUntilNextUnlock: Math.max(0, fallbackNextUnlock - Math.floor(Date.now() / 1000)),
-        lockDuration: escrowData.lockDuration || 14400,
+        nextUnlockTime,
+        progress,
+        timeUntilNextUnlock,
+        lockDuration: escrowData.lockDuration,
         network: 'solana',
-        currency: 'SOL'
+        currency: 'SOL',
+        initializationTimestamp: escrowData.initializationTimestamp,
+        isFullyUnlocked: hasUnlockTimePassed && transparencyData.totalLocked <= 0
       });
+    } catch (error) {
+      console.error('Error fetching Solana lock status:', error);
+      throw error;
     }
   };
 
-  // Обновление таймера каждую секунду
+  // Real-time timer updates with progress recalculation
   useEffect(() => {
-    if (!lockData || lockData.timeUntilNextUnlock <= 0) return;
+    if (!lockData) return;
 
     const updateTimer = () => {
       const currentTime = Math.floor(Date.now() / 1000);
@@ -217,6 +171,10 @@ export const GlobalLockStatus: React.FC = () => {
       
       if (timeLeft <= 0) {
         setTimeLeft('Unlocked');
+        // Trigger refresh when unlock time is reached
+        if (lockData.timeUntilNextUnlock > 0) {
+          fetchGlobalLockStatus();
+        }
         return;
       }
 
@@ -241,13 +199,10 @@ export const GlobalLockStatus: React.FC = () => {
     return () => clearInterval(interval);
   }, [lockData]);
 
-  // Загрузка данных при монтировании компонента и смене сети
+  // Load data once on mount and network change
   useEffect(() => {
     fetchGlobalLockStatus();
-    // Обновляем каждые 30 секунд
-    const interval = setInterval(fetchGlobalLockStatus, 30000);
-    return () => clearInterval(interval);
-  }, [wallet.chain]); // Перезагружаем при смене сети
+  }, [wallet.chain]);
 
   if (isLoading) {
     return (
@@ -318,9 +273,9 @@ export const GlobalLockStatus: React.FC = () => {
         <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-green-300 text-sm font-medium">Released to Project</p>
+              <p className="text-green-300 text-sm font-medium">Available to Project</p>
               <p className="text-2xl font-bold text-green-200">
-                {formatBnb(lockData.totalUnlocked)} {lockData.currency}
+                {formatBnb((parseFloat(lockData.totalDeposited) - parseFloat(lockData.totalLocked)).toFixed(6))} {lockData.currency}
               </p>
             </div>
             <Unlock className="text-green-400" size={24} />
@@ -328,30 +283,41 @@ export const GlobalLockStatus: React.FC = () => {
         </div>
       </div>
 
-      {/* Прогресс-бар времени */}
+      {/* Progress bar with initialization timestamp info */}
       <div className="mb-6">
         <div className="flex justify-between text-sm text-text-muted mb-2">
-          <span>Lock Progress (ends {new Date(lockData.nextUnlockTime * 1000).toLocaleDateString()})</span>
+          <span>
+            Lock Progress 
+            {lockData.initializationTimestamp > 0 && (
+              <span className="text-xs">
+                (started {new Date(lockData.initializationTimestamp * 1000).toLocaleDateString()})
+              </span>
+            )}
+          </span>
           <span>{lockData.progress.toFixed(1)}%</span>
         </div>
         <div className="w-full bg-bg-hover rounded-full h-4 overflow-hidden">
           <motion.div
-            className="bg-gradient-to-r from-orange-500 to-green-500 h-4 rounded-full"
+            className={`h-4 rounded-full ${
+              lockData.progress >= 100 
+                ? 'bg-gradient-to-r from-green-500 to-green-400' 
+                : 'bg-gradient-to-r from-orange-500 to-yellow-500'
+            }`}
             initial={{ width: 0 }}
-            animate={{ width: `${lockData.progress}%` }}
+            animate={{ width: `${Math.min(100, lockData.progress)}%` }}
             transition={{ duration: 1, ease: "easeOut" }}
           />
         </div>
       </div>
 
-      {/* Таймер до следующей разблокировки */}
+      {/* Timer to next unlock */}
       {lockData.timeUntilNextUnlock > 0 ? (
         <div className="bg-gradient-to-r from-purple-900/40 to-blue-900/40 border border-purple-500/30 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-purple-300 text-sm font-medium flex items-center">
                 <Timer className="mr-2" size={16} />
-                Next Unlock Timer
+                Unlock Timer
               </p>
               <p className="text-xl font-mono text-purple-200">{timeLeft}</p>
             </div>
@@ -368,19 +334,30 @@ export const GlobalLockStatus: React.FC = () => {
           <div className="flex items-center">
             <Unlock className="mr-3 text-green-400" size={20} />
             <div>
-              <p className="text-green-300 font-medium">All Funds Unlocked</p>
-              <p className="text-green-400 text-sm">Ready for withdrawal</p>
+              <p className="text-green-300 font-medium">
+                {lockData.isFullyUnlocked ? 'All Funds Unlocked' : 'Unlock Time Reached'}
+              </p>
+              <p className="text-green-400 text-sm">
+                {lockData.isFullyUnlocked ? 'Ready for withdrawal' : 'Waiting for contract update'}
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Информация о прозрачности */}
+      {/* Transparency info with initialization details */}
       <div className="mt-4 pt-4 border-t border-border-dark">
         <p className="text-xs text-text-muted text-center">
-          🔍 All data is read directly from the smart contract on {lockData.network === 'bnb' ? 'BSC Testnet' : 'Solana Devnet'}.
-          {lockData.network === 'bnb' && `Contract: ${CONTRACTS.bnb.escrow}`}
-          {lockData.network === 'solana' && 'Program: Solana Escrow'}
+          🔍 All data read from smart contract on {lockData.network === 'bnb' ? 'BSC Testnet' : 'Solana Devnet'}.
+          {lockData.initializationTimestamp > 0 && (
+            <span className="block mt-1">
+              ⏰ Timer started: {new Date(lockData.initializationTimestamp * 1000).toLocaleString()}
+            </span>
+          )}
+          <span className="block mt-1">
+            {lockData.network === 'bnb' && `Contract: ${CONTRACTS.bnb.escrow}`}
+            {lockData.network === 'solana' && `Program: ${CONTRACTS.solana.programId}`}
+          </span>
         </p>
       </div>
     </motion.div>

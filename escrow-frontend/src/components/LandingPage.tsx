@@ -1,9 +1,55 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Shield, Lock, Clock, TrendingUp, CheckCircle } from 'lucide-react';
 import { GlobalLockStatus } from './GlobalLockStatus';
+import { useWallet } from '../contexts/WalletContext';
+import { ethers } from 'ethers';
+import { CONTRACTS, ESCROW_ABI } from '../config/contracts';
+import { getEscrowStatus as getSolanaEscrowStatus } from '../utils/solana';
 
 export const LandingPage: React.FC = () => {
+  const wallet = useWallet();
+  const [lockDuration, setLockDuration] = useState<string>('Loading...');
+  
+  // Получаем lockDuration из контракта
+  const fetchLockDuration = async () => {
+    try {
+      if (wallet.chain === 'bnb') {
+        const provider = new ethers.JsonRpcProvider('https://data-seed-prebsc-1-s1.binance.org:8545');
+        const contract = new ethers.Contract(CONTRACTS.bnb.escrow, ESCROW_ABI, provider);
+        const escrowStatus = await contract.getEscrowStatus();
+        const duration = Number(escrowStatus[5]) || 14400; // lockDuration из контракта
+        setLockDuration(formatDuration(duration));
+      } else if (wallet.chain === 'solana') {
+        const escrowData = await getSolanaEscrowStatus();
+        const duration = escrowData.lockDuration || 14400;
+        setLockDuration(formatDuration(duration));
+      } else {
+        // По умолчанию показываем 4 часа, пока нет сети
+        setLockDuration('4h');
+      }
+    } catch (error) {
+      console.error('Error fetching lock duration:', error);
+      setLockDuration('4h'); // fallback
+    }
+  };
+
+  // Форматируем продолжительность в читаемый вид
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    } else {
+      return `${minutes}m`;
+    }
+  };
+
+  useEffect(() => {
+    fetchLockDuration();
+  }, [wallet.chain]);
+
   const features = [
     {
       icon: Shield,
@@ -247,7 +293,7 @@ export const LandingPage: React.FC = () => {
             <div className="text-text-muted text-sm">Fund Split Ratio</div>
           </motion.div>
           <motion.div variants={itemVariants}>
-            <div className="text-3xl font-bold gradient-text mb-2">5min</div>
+            <div className="text-3xl font-bold gradient-text mb-2">{lockDuration}</div>
             <div className="text-text-muted text-sm">Time-lock Period</div>
           </motion.div>
           <motion.div variants={itemVariants}>

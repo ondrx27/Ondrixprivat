@@ -51,6 +51,7 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
         uint256 totalBnbWithdrawn;
         uint256 lockDuration; // in seconds
         uint256 saleEndTimestamp;
+        uint256 initializationTimestamp; // TIMER STARTS FROM HERE
         // Immutable oracle config
         AggregatorV3Interface priceFeed; // BNB/USD price feed
         uint256 minBnbInvestment;
@@ -194,6 +195,7 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
             totalBnbWithdrawn: 0,
             lockDuration: _lockDuration,
             saleEndTimestamp: _saleEndTimestamp,
+            initializationTimestamp: block.timestamp, // TIMER STARTS NOW
             priceFeed: AggregatorV3Interface(_priceFeed),
             minBnbInvestment: _minBnbInvestment,
             maxBnbInvestment: _maxBnbInvestment,
@@ -313,8 +315,8 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
         if (!investor.isInitialized) revert NoBnbToWithdraw();
         if (investor.status == InvestorStatus.BnbWithdrawn) revert NoBnbToWithdraw();
 
-        // Check if lock period has passed
-        if (block.timestamp < investor.depositTimestamp + globalEscrow.lockDuration) {
+        // Check if lock period has passed (BASED ON INITIALIZATION TIME)
+        if (block.timestamp < globalEscrow.initializationTimestamp + globalEscrow.lockDuration) {
             revert BnbStillLocked();
         }
 
@@ -397,12 +399,12 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @dev Check if unlock time has passed for an investor
+     * @dev Check if unlock time has passed (BASED ON INITIALIZATION TIME)
      */
     function isUnlockTime(address _investor) public view returns (bool) {
         InvestorAccount memory investor = investorAccounts[_investor];
         if (!investor.isInitialized) return false;
-        return block.timestamp >= investor.depositTimestamp + globalEscrow.lockDuration;
+        return block.timestamp >= globalEscrow.initializationTimestamp + globalEscrow.lockDuration;
     }
 
     /**
@@ -420,7 +422,7 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @dev Get escrow status information
+     * @dev Get escrow status information with initialization timestamp
      */
     function getEscrowStatus() external view returns (
         bool isInitialized,
@@ -438,6 +440,13 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
             globalEscrow.totalBnbWithdrawn,
             globalEscrow.lockDuration
         );
+    }
+
+    /**
+     * @dev Get initialization timestamp
+     */
+    function getInitializationTimestamp() external view returns (uint256) {
+        return globalEscrow.initializationTimestamp;
     }
 
     /**
@@ -490,13 +499,13 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @dev Get the next unlock time for a specific investor
+     * @dev Get the next unlock time (GLOBAL - BASED ON INITIALIZATION TIME)
      */
     function nextUnlockTime(address _investor) external view returns (uint256) {
         InvestorAccount memory investor = investorAccounts[_investor];
         if (!investor.isInitialized) return 0;
         if (investor.status == InvestorStatus.BnbWithdrawn) return 0; // Already withdrawn
-        return investor.depositTimestamp + globalEscrow.lockDuration;
+        return globalEscrow.initializationTimestamp + globalEscrow.lockDuration;
     }
 
     /**
@@ -519,7 +528,7 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
         totalInvested = investor.bnbDeposited;
         immediateAmount = totalInvested / 2; // 50% immediate
         lockedAmount = investor.lockedBnbAmount;
-        unlockTime = investor.depositTimestamp + globalEscrow.lockDuration;
+        unlockTime = globalEscrow.initializationTimestamp + globalEscrow.lockDuration; // GLOBAL UNLOCK TIME
         isUnlocked = block.timestamp >= unlockTime || investor.status == InvestorStatus.BnbWithdrawn;
         
         if (isUnlocked) {

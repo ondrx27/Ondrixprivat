@@ -7,8 +7,8 @@ export const CONTRACTS: ContractAddresses = {
     tokenMint: "GgSUXk3vge5kVnZ7JiV1njAJ3mCpcrqBWcpG8ohWFTL2", // New Token mint with initialization timer
   },
   bnb: {
-    escrow: "0xf9b69Ac0d53F06BE4dd0ED4Da2760670d1772981", // FIXED: Contract with 4 hour lock, working price feed
-    token: "0x4d4a1993a27855d800c68CE464dEEFC7f598Af89", // FIXED: Mock ODX token for testing
+    escrow: "0x7f04f41B6bD9dCd792F5fb45954CcFF7c9240F2C", // FIXED: Contract with global timer from initialization
+    token: "0x065bCc28E8be8F2Eae577C35B28d7cdC5976047F", // FIXED: Mock ODX token for testing
     priceFeed: "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526", // BSC Testnet Chainlink BNB/USD
   }
 };
@@ -49,6 +49,7 @@ export const ESCROW_ABI = [
   "function getPendingWithdrawal(address user) view returns (uint256)",
   "function emergencyStop() view returns (bool)",
   "function getChainlinkPrice() view returns (uint256 price, uint256 timestamp)",
+  "function getInitializationTimestamp() view returns (uint256)",
   
   // NEW: Transparency functions for lock status
   "function totalDeposited() view returns (uint256)",
