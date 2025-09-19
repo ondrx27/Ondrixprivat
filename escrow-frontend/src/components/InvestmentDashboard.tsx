@@ -1135,8 +1135,8 @@ export const InvestmentDashboard: React.FC = () => {
                       <Clock className="text-warning" size={16} />
                       <span className="text-warning text-sm">
                         Locked until {isDemoMode 
-                          ? new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
-                          : new Date((solanaInvestment.investorData.depositTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.investorData.depositTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                          ? new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                          : new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
                         }
                       </span>
                     </>
@@ -1839,12 +1839,12 @@ export const InvestmentDashboard: React.FC = () => {
                     <Clock className="text-warning" size={16} />
                     <span className="text-warning text-sm">
                       Locked until {isDemoMode 
-                        ? (getDemoData().investorData.depositTimestamp > 0 
-                            ? new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowStatus?.lockDuration || 14400)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().investorData.depositTimestamp + (getDemoData().escrowStatus?.lockDuration || 14400)) * 1000).toLocaleTimeString()
-                            : 'Unknown')
-                        : (investorData.depositTimestamp > 0 
-                            ? new Date((investorData.depositTimestamp + (escrowStatus?.lockDuration || 14400)) * 1000).toLocaleDateString() + ' ' + new Date((investorData.depositTimestamp + (escrowStatus?.lockDuration || 14400)) * 1000).toLocaleTimeString()
-                            : 'Unknown')
+                        ? (getDemoData().transparencyStats?.nextUnlockTime 
+                            ? new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleDateString() + ' ' + new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleTimeString()
+                            : 'Loading...')
+                        : (transparencyStats?.nextUnlockTime 
+                            ? new Date(transparencyStats.nextUnlockTime * 1000).toLocaleDateString() + ' ' + new Date(transparencyStats.nextUnlockTime * 1000).toLocaleTimeString()
+                            : 'Loading...')
                       }
                     </span>
                   </>

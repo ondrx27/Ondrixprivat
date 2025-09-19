@@ -415,9 +415,9 @@ export async function getInvestorData(investor: PublicKey): Promise<{
     // Get global escrow data to check lock duration
     const escrowStatus = await getEscrowStatus();
     
-    // Calculate if unlocked (current time > deposit time + lock duration)
+    // Calculate if unlocked (GLOBAL TIMING - current time > initialization time + lock duration)
     const currentTimestamp = Math.floor(Date.now() / 1000);
-    const unlockTimestamp = Number(investorData.depositTimestamp) + escrowStatus.lockDuration;
+    const unlockTimestamp = escrowStatus.initializationTimestamp + escrowStatus.lockDuration;
     const isUnlocked = currentTimestamp >= unlockTimestamp;
 
     return {
