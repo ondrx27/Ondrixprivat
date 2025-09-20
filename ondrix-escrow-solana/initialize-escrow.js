@@ -25,8 +25,8 @@ console.log(`🚀 Initializing Solana Escrow Contract: ${PROGRAM_ID.toString()}`
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
 // Use existing test wallets that have SOL
-const INVESTOR1_PRIVATE = 'rKAMdrQgnE3zvQdLK4MtXBQqvwhMLoDnbgyAM7heWeM3pUoyA6sWFLSixp2dySt3SiYskQdaU6wKHNh1X3r77pZ';
-const RECIPIENT_PRIVATE = '37yWdyP1E8sVqRpVEK5Y3cFHuDggnbPEuXGR7zDo4PxbDZwTBCcTNK3bZwErTuNfB3Nn6NLtHqxgzNLCNSPRxsXN';
+const INVESTOR1_PRIVATE = 'your_base58_private_key_here';
+const RECIPIENT_PRIVATE = 'EJ6bPvsTXfzk1WS9eXKDQ3KL5x9a2wy15XPxL48FdeAc';
 
 // Base58 decoder
 function decodeBase58(encoded) {
