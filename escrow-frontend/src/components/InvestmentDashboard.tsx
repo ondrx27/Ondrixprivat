@@ -86,7 +86,7 @@ export const InvestmentDashboard: React.FC = () => {
       const solPrice = 237; // $237 per SOL (current price)
       const investmentSol = 1.0; // 1 SOL investment
       const tokensReceived = (investmentSol * solPrice) / 0.10; // 2370 tokens at $0.10 each
-      const lockDuration = 300; // 5 minutes for Solana
+      const lockDuration = 0; // Demo mode - show "N/A" instead of countdown
       
       // For demo, make investment 2 minutes ago so it's still locked
       const demoDepositTime = currentTime - 120; // 2 minutes ago
@@ -96,17 +96,17 @@ export const InvestmentDashboard: React.FC = () => {
       return {
         investorData: {
           isInitialized: true,
-          solDeposited: investmentSol * 1e9, // 1.000000000 SOL in lamports
+          solDeposited: investmentSol * 1e9, // Individual demo: 1 SOL
           tokensReceived: tokensReceived * 1e9, // 2370.000000000 tokens
           depositTimestamp: demoDepositTime,
-          lockedSolAmount: demoIsUnlocked ? 0 : (investmentSol / 2) * 1e9, // 0.5 SOL locked
+          lockedSolAmount: solanaTransparencyStats ? solanaTransparencyStats.totalLocked * 1e9 : 0, // Use real data
           isUnlocked: demoIsUnlocked
         },
         escrowData: {
           totalTokensAvailable: 10000, // Increased total supply to be realistic
           tokensSold: 4500, // Multiple investors: our 2370 + others
-          totalSolDeposited: 8.5, // Total across all investors
-          totalSolWithdrawn: 4.25, // 50% released to project (8.5 * 0.5)
+          totalSolDeposited: solanaTransparencyStats ? solanaTransparencyStats.totalDeposited : 0, // Use real data
+          totalSolWithdrawn: solanaTransparencyStats ? solanaTransparencyStats.totalUnlocked : 0, // Use real data
           lockDuration,
           initializationTimestamp: currentTime - 3600 // 1 hour ago
         }
@@ -116,7 +116,7 @@ export const InvestmentDashboard: React.FC = () => {
       const bnbPrice = currentBnbPrice;
       const investmentBnb = 1.0; // 1 BNB investment  
       const tokensReceived = (investmentBnb * bnbPrice) / 0.10; // tokens at $0.10 each
-      const lockDuration = 14400; // 4 hours for BNB
+      const lockDuration = 0; // Demo mode - show "N/A" instead of countdown
       const initializationTime = currentTime - 7200; // Contract initialized 2 hours ago
       const unlockTime = initializationTime + lockDuration; // GLOBAL unlock time
       const isUnlocked = currentTime >= unlockTime;
@@ -700,7 +700,9 @@ export const InvestmentDashboard: React.FC = () => {
                 <p className="text-text-muted mb-1">Lock Ends:</p>
                 <p className="text-text-primary">
                   {solanaInvestment.escrowData?.initializationTimestamp ? 
-                    new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString()
+                    solanaInvestment.escrowData?.lockDuration ? 
+                      new Date((solanaInvestment.escrowData.initializationTimestamp + solanaInvestment.escrowData.lockDuration) * 1000).toLocaleDateString()
+                      : 'N/A'
                     : 'Loading...'
                   }
                 </p>
@@ -875,10 +877,14 @@ export const InvestmentDashboard: React.FC = () => {
                   <span className="text-text-primary">
                     {isDemoMode 
                       ? (getDemoData().escrowData?.initializationTimestamp 
-                          ? new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
-                          : 'Loading...')
+                          ? (getDemoData().escrowData?.lockDuration ? 
+                              new Date((getDemoData().escrowData.initializationTimestamp + getDemoData().escrowData.lockDuration) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().escrowData.initializationTimestamp + getDemoData().escrowData.lockDuration) * 1000).toLocaleTimeString()
+                              : 'N/A')
+                          : 'N/A')
                       : (solanaInvestment.escrowData?.initializationTimestamp 
-                          ? new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                          ? (solanaInvestment.escrowData?.lockDuration ? 
+                              new Date((solanaInvestment.escrowData.initializationTimestamp + solanaInvestment.escrowData.lockDuration) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.escrowData.initializationTimestamp + solanaInvestment.escrowData.lockDuration) * 1000).toLocaleTimeString()
+                              : 'N/A')
                           : 'Loading...')
                     }
                   </span>
@@ -1134,9 +1140,13 @@ export const InvestmentDashboard: React.FC = () => {
                     <>
                       <Clock className="text-warning" size={16} />
                       <span className="text-warning text-sm">
-                        Locked until {isDemoMode 
-                          ? new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().escrowData.initializationTimestamp + (getDemoData().escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
-                          : new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.escrowData.initializationTimestamp + (solanaInvestment.escrowData?.lockDuration || 300)) * 1000).toLocaleTimeString()
+                        {isDemoMode 
+                          ? (getDemoData().escrowData?.lockDuration ? 
+                              'Locked until ' + new Date((getDemoData().escrowData.initializationTimestamp + getDemoData().escrowData.lockDuration) * 1000).toLocaleDateString() + ' ' + new Date((getDemoData().escrowData.initializationTimestamp + getDemoData().escrowData.lockDuration) * 1000).toLocaleTimeString()
+                              : 'N/A')
+                          : (solanaInvestment.escrowData?.lockDuration ? 
+                              'Locked until ' + new Date((solanaInvestment.escrowData.initializationTimestamp + solanaInvestment.escrowData.lockDuration) * 1000).toLocaleDateString() + ' ' + new Date((solanaInvestment.escrowData.initializationTimestamp + solanaInvestment.escrowData.lockDuration) * 1000).toLocaleTimeString()
+                              : 'N/A')
                         }
                       </span>
                     </>
