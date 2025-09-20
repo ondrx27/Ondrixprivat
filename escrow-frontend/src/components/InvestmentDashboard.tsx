@@ -99,14 +99,14 @@ export const InvestmentDashboard: React.FC = () => {
           solDeposited: investmentSol * 1e9, // Individual demo: 1 SOL
           tokensReceived: tokensReceived * 1e9, // 2370.000000000 tokens
           depositTimestamp: demoDepositTime,
-          lockedSolAmount: solanaTransparencyStats ? solanaTransparencyStats.totalLocked * 1e9 : 0, // Use real data
+          lockedSolAmount: demoIsUnlocked ? 0 : (investmentSol / 2) * 1e9, // 0.5 SOL locked
           isUnlocked: demoIsUnlocked
         },
         escrowData: {
           totalTokensAvailable: 10000, // Increased total supply to be realistic
           tokensSold: 4500, // Multiple investors: our 2370 + others
-          totalSolDeposited: solanaTransparencyStats ? solanaTransparencyStats.totalDeposited : 0, // Use real data
-          totalSolWithdrawn: solanaTransparencyStats ? solanaTransparencyStats.totalUnlocked : 0, // Use real data
+          totalSolDeposited: 8.5, // Total across all investors
+          totalSolWithdrawn: 4.25, // 50% released to project (8.5 * 0.5)
           lockDuration,
           initializationTimestamp: currentTime - 3600 // 1 hour ago
         }
