@@ -24,9 +24,8 @@ console.log(`🚀 Initializing Solana Escrow Contract: ${PROGRAM_ID.toString()}`
 // Connection to devnet
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
-// Use existing test wallets that have SOL
 const INVESTOR1_PRIVATE = 'your_base58_private_key_here';
-const RECIPIENT_PRIVATE = 'EJ6bPvsTXfzk1WS9eXKDQ3KL5x9a2wy15XPxL48FdeAc';
+const RECIPIENT_PUBLIC = 'EJ6bPvsTXfzk1WS9eXKDQ3KL5x9a2wy15XPxL48FdeAc'; 
 
 // Base58 decoder
 function decodeBase58(encoded) {
@@ -54,7 +53,7 @@ function decodeBase58(encoded) {
 
 // Use existing test wallets 
 const initializer = Keypair.fromSecretKey(decodeBase58(INVESTOR1_PRIVATE));
-const recipient = Keypair.fromSecretKey(decodeBase58(RECIPIENT_PRIVATE));
+const recipient = new PublicKey(RECIPIENT_PUBLIC);
 
 // Test constants matching EVM version
 const TOKEN_DECIMALS = 9;
@@ -127,7 +126,7 @@ async function initializeEscrow(tokenMintPubkey, initializerTokenAccount) {
         initializer.publicKey,
         tokenMintPubkey,
         initializerTokenAccount,
-        recipient.publicKey,
+        recipient,
         tokenAmountForEscrow,
         lockDurationBigInt,
         PROGRAM_ID
@@ -145,7 +144,7 @@ async function initializeEscrow(tokenMintPubkey, initializerTokenAccount) {
         return {
             globalEscrow: globalEscrow.toString(),
             tokenMint: tokenMintPubkey.toString(),
-            recipient: recipient.publicKey.toString(),
+            recipient: recipient.toString(),
             signature,
         };
         
@@ -160,7 +159,7 @@ async function main() {
         console.log('\n🎯 Starting Solana Escrow Initialization');
         console.log(`Program ID: ${PROGRAM_ID.toString()}`);
         console.log(`Initializer: ${initializer.publicKey.toString()}`);
-        console.log(`Recipient: ${recipient.publicKey.toString()}`);
+        console.log(`Recipient: ${recipient.toString()}`);
         
         // Step 1: Create test token
         const { tokenMint, initializerTokenAccount } = await createToken();
