@@ -75,15 +75,15 @@ export const GlobalLockStatus: React.FC = () => {
       const totalUnlockedFormatted = ethers.formatEther(totalUnlocked);
       const totalLockedFormatted = ethers.formatEther(totalLocked);
       
-      console.log('🔒 BNB lock status (FIXED):', {
-        totalDeposited: totalDepositedFormatted,
-        totalUnlocked: totalUnlockedFormatted,
-        totalLocked: totalLockedFormatted,
-        initializationTimestamp: initTimestamp,
+      console.log('🔍 BNB lock status - using contract totalUnlocked:', {
+        currentTime,
+        initTimestamp,
         unlockTime,
         hasUnlockTimePassed,
-        progress: progress.toFixed(1),
-        timeUntilNextUnlock
+        totalDeposited: totalDepositedFormatted,
+        totalLocked: totalLockedFormatted,
+        totalUnlocked: totalUnlockedFormatted,
+        timeRemaining: unlockTime - currentTime
       });
 
       setLockData({
@@ -131,7 +131,7 @@ export const GlobalLockStatus: React.FC = () => {
       const totalUnlockedFormatted = transparencyData.totalUnlocked.toFixed(6);
       const totalLockedFormatted = transparencyData.totalLocked.toFixed(6);
       
-      console.log('📊 Solana lock status:', {
+      console.log('📊 Solana lock status - using contract totalUnlocked:', {
         totalDeposited: totalDepositedFormatted,
         totalUnlocked: totalUnlockedFormatted,
         totalLocked: totalLockedFormatted,
@@ -275,7 +275,7 @@ export const GlobalLockStatus: React.FC = () => {
             <div>
               <p className="text-green-300 text-sm font-medium">Available to Project</p>
               <p className="text-2xl font-bold text-green-200">
-                {formatBnb((parseFloat(lockData.totalDeposited) - parseFloat(lockData.totalLocked)).toFixed(6))} {lockData.currency}
+                {formatBnb(lockData.totalUnlocked)} {lockData.currency}
               </p>
             </div>
             <Unlock className="text-green-400" size={24} />

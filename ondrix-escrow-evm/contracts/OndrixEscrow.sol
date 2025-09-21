@@ -483,10 +483,10 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @dev Get total BNB that has been unlocked and withdrawn
+     * @dev Get total BNB that has been unlocked (withdrawn + pending)
      */
     function totalUnlocked() external view returns (uint256) {
-        return globalEscrow.totalBnbWithdrawn;
+        return globalEscrow.totalBnbWithdrawn + pendingWithdrawals[globalEscrow.recipientWallet];
     }
 
     /**

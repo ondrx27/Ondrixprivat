@@ -2,13 +2,13 @@ import { ContractAddresses, NetworkInfo } from '../types';
 
 export const CONTRACTS: ContractAddresses = {
   solana: {
-    programId: "9kaoCE6mLVUvvAkSkE4UbPkwb6fy7yfuDq78zGsRUVoS", // New Solana program with initialization-based timer
-    globalEscrow: "Cc7Yquecy9YUBwRbiNXqjtL5yAVcqTmyaa7ETV2y3cTC", // New Global Escrow with initialization-based timer
-    tokenMint: "GgSUXk3vge5kVnZ7JiV1njAJ3mCpcrqBWcpG8ohWFTL2", // New Token mint with initialization timer
+    programId: "3HKy5EE7wqUTa7K2dCzAPrwUAbUFS2wrKGAvuWqjvTS6", // Updated Solana program with global timing + rent-exempt safety
+    globalEscrow: "14C88oJ8ry14j437iMZ6gEFNfAeAZ7vhHq6q6749j6en", // Updated Global Escrow with initialization timestamp
+    tokenMint: "FVDEgYKQa3vk9PMTK9YbeNnN31encknQiK8PoYUpq4US", // Updated Token mint address
   },
   bnb: {
-    escrow: "0x7f04f41B6bD9dCd792F5fb45954CcFF7c9240F2C", // FIXED: Contract with global timer from initialization
-    token: "0x065bCc28E8be8F2Eae577C35B28d7cdC5976047F", // FIXED: Mock ODX token for testing
+    escrow: "0x5510F4394B597fB0c2c81D7Aa3d696e1c03DD59E", // FIXED: Contract with correct totalUnlocked calculation
+    token: "0xaF2ee38881200df039189360DB7C554dE34Aeded", // FIXED: Mock ODX token for testing
     priceFeed: "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526", // BSC Testnet Chainlink BNB/USD
   }
 };

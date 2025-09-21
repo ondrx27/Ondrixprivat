@@ -210,7 +210,7 @@ export const InvestmentDashboard: React.FC = () => {
 
   // FIXED: Global unlock timer based on initialization timestamp
   useEffect(() => {
-    if (investorData && investorData.isInitialized && !investorData.isUnlocked && transparencyStats?.nextUnlockTime) {
+    if (investorData && investorData.isInitialized && !investorData.isUnlocked && transparencyStats?.nextUnlockTime && !isDemoMode) {
       const interval = setInterval(() => {
         const now = Date.now() / 1000;
         const unlockTime = transparencyStats.nextUnlockTime; // GLOBAL unlock time from initialization
@@ -233,7 +233,7 @@ export const InvestmentDashboard: React.FC = () => {
       
       return () => clearInterval(interval);
     }
-  }, [investorData, transparencyStats]);
+  }, [investorData, transparencyStats, isDemoMode]);
 
   // Update BNB price periodically
   useEffect(() => {
@@ -1420,9 +1420,7 @@ export const InvestmentDashboard: React.FC = () => {
             <p className="text-text-muted mb-1">Lock Ends:</p>
             <p className="text-text-primary">
               {isDemoMode 
-                ? (getDemoData().transparencyStats?.nextUnlockTime 
-                    ? new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleDateString()
-                    : 'Loading...')
+                ? 'N/A'
                 : (transparencyStats?.nextUnlockTime 
                     ? new Date(transparencyStats.nextUnlockTime * 1000).toLocaleDateString()
                     : 'Loading...')
@@ -1569,9 +1567,7 @@ export const InvestmentDashboard: React.FC = () => {
                 <span className="text-text-muted">Lock Ends:</span>
                 <span className="text-text-primary">
                   {isDemoMode 
-                    ? (getDemoData().transparencyStats?.nextUnlockTime 
-                        ? new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleDateString() + ' ' + new Date(getDemoData().transparencyStats.nextUnlockTime * 1000).toLocaleTimeString()
-                        : 'Loading...')
+                    ? 'N/A'
                     : (transparencyStats?.nextUnlockTime 
                         ? new Date(transparencyStats.nextUnlockTime * 1000).toLocaleDateString() + ' ' + new Date(transparencyStats.nextUnlockTime * 1000).toLocaleTimeString()
                         : 'Loading...')
@@ -1605,8 +1601,8 @@ export const InvestmentDashboard: React.FC = () => {
                     <span className="text-text-muted">Released to Project:</span>
                     <span className="text-accent-green">
                       {isDemoMode 
-                        ? (parseFloat(getDemoData().transparencyStats?.totalDeposited || "0") - parseFloat(getDemoData().transparencyStats?.totalLocked || "0")).toFixed(6)
-                        : (parseFloat(transparencyStats.totalDeposited) - parseFloat(transparencyStats.totalLocked)).toFixed(6)
+                        ? parseFloat(getDemoData().transparencyStats?.totalUnlocked || "0").toFixed(6)
+                        : parseFloat(transparencyStats.totalUnlocked).toFixed(6)
                       } BNB
                     </span>
                   </div>

@@ -106,11 +106,14 @@ pub struct GlobalEscrow {
     
     // SALE MANAGEMENT
     pub sale_end_timestamp: i64,      // When sale ends (for unsold token reclaim)
+    
+    // GLOBAL TIMING
+    pub initialization_timestamp: i64, // When contract was initialized (for global unlock timing)
 }
 
 impl GlobalEscrow {
-    // Updated size: original + oracle_program_id + price_feed_pubkey + 3 config values + sale_end_timestamp
-    pub const LEN: usize = 1 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1 + 32 + 32 + 8 + 8 + 8 + 8;
+    // Updated size: original + oracle_program_id + price_feed_pubkey + 3 config values + sale_end_timestamp + initialization_timestamp
+    pub const LEN: usize = 1 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1 + 32 + 32 + 8 + 8 + 8 + 8 + 8;
 }
 
 // Per-investor account - one per investor per global escrow
@@ -606,6 +609,9 @@ pub fn process_initialize_escrow(
         
         // SALE MANAGEMENT
         sale_end_timestamp,
+        
+        // GLOBAL TIMING
+        initialization_timestamp: Clock::get()?.unix_timestamp,
     };
 
     global_escrow.serialize(&mut &mut global_escrow_account.data.borrow_mut()[..])?;
@@ -1002,8 +1008,12 @@ pub fn process_withdraw_locked_sol(
         return Err(EscrowError::InvalidPDA.into());
     }
 
-    // Check if lock period has passed
-    if !investor_data.is_unlock_time(global_escrow.lock_duration)? {
+    // Check if GLOBAL lock period has passed (not individual investor timing)
+    let current_timestamp = Clock::get()?.unix_timestamp;
+    let global_unlock_time = global_escrow.initialization_timestamp + global_escrow.lock_duration;
+    
+    if current_timestamp < global_unlock_time {
+        msg!("SOL still locked globally. Current: {}, Unlock at: {}", current_timestamp, global_unlock_time);
         return Err(EscrowError::SolStillLocked.into());
     }
 
@@ -1014,6 +1024,14 @@ pub fn process_withdraw_locked_sol(
     let vault_balance = sol_vault_account.lamports();
     if vault_balance < sol_to_withdraw {
         return Err(EscrowError::NoSolToWithdraw.into());
+    }
+
+    // SAFETY: Ensure SOL vault remains rent-exempt after withdrawal
+    let rent = Rent::get()?;
+    let min_rent_balance = rent.minimum_balance(0);
+    let remaining_balance = vault_balance - sol_to_withdraw;
+    if remaining_balance < min_rent_balance {
+        return Err(EscrowError::NotRentExempt.into());
     }
 
     // Verify recipient wallet matches the one stored in global escrow
