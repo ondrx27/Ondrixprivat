@@ -122,7 +122,7 @@ export function useSolanaInvestment() {
         throw new Error(`Insufficient SOL balance. You need at least ${(Number(lamports) + 10000000) / 1e9} SOL (including fees)`);
       }
 
-      const recipientWallet = new PublicKey('EJ6bPvsTXfzk1WS9eXKDQ3KL5x9a2wy15XPxL48FdeAc'); // From initialization
+      const recipientWallet = new PublicKey(import.meta.env.VITE_SOLANA_RECIPIENT_WALLET || 'EJ6bPvsTXfzk1WS9eXKDQ3KL5x9a2wy15XPxL48FdeAc');
 
       // Check if investor token account exists, create if not
       const investorTokenAccount = await getAssociatedTokenAddress(

@@ -2,14 +2,14 @@ import { ContractAddresses, NetworkInfo } from '../types';
 
 export const CONTRACTS: ContractAddresses = {
   solana: {
-    programId: "3HKy5EE7wqUTa7K2dCzAPrwUAbUFS2wrKGAvuWqjvTS6", // Updated Solana program with global timing + rent-exempt safety
-    globalEscrow: "14C88oJ8ry14j437iMZ6gEFNfAeAZ7vhHq6q6749j6en", // Updated Global Escrow with initialization timestamp
-    tokenMint: "FVDEgYKQa3vk9PMTK9YbeNnN31encknQiK8PoYUpq4US", // Updated Token mint address
+    programId: import.meta.env.VITE_SOLANA_PROGRAM_ID || "3HKy5EE7wqUTa7K2dCzAPrwUAbUFS2wrKGAvuWqjvTS6",
+    globalEscrow: import.meta.env.VITE_SOLANA_GLOBAL_ESCROW || "14C88oJ8ry14j437iMZ6gEFNfAeAZ7vhHq6q6749j6en",
+    tokenMint: import.meta.env.VITE_SOLANA_TOKEN_MINT || "FVDEgYKQa3vk9PMTK9YbeNnN31encknQiK8PoYUpq4US",
   },
   bnb: {
-    escrow: "0x5510F4394B597fB0c2c81D7Aa3d696e1c03DD59E", // FIXED: Contract with correct totalUnlocked calculation
-    token: "0xaF2ee38881200df039189360DB7C554dE34Aeded", // FIXED: Mock ODX token for testing
-    priceFeed: "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526", // BSC Testnet Chainlink BNB/USD
+    escrow: import.meta.env.VITE_BNB_ESCROW_ADDRESS || "0x9c1Ba8Be02fF1273a83fFBEF4c2cF242D4ecaC3f",
+    token: import.meta.env.VITE_BNB_TOKEN_ADDRESS || "0x0F91a1895DEE31916c4Ec9B37CCD7c986eC99AFD",
+    priceFeed: import.meta.env.VITE_BNB_PRICE_FEED || "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526",
   }
 };
 
