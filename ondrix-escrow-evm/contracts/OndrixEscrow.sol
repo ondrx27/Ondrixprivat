@@ -24,7 +24,7 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
     uint8 public constant CHAINLINK_USD_DECIMALS = 8; // Chainlink BNB/USD price has 8 decimals
     uint8 public constant TOKEN_DECIMALS = 18; // ERC20 standard decimals
     uint256 public constant BNB_WEI = 1e18; // 1 BNB = 1e18 wei
-    uint256 public constant PRICE_STALENESS_THRESHOLD = 120; // 2 minutes (MORE SECURE)
+    uint256 public constant PRICE_STALENESS_THRESHOLD = 300; // 5 minutes (consistent with Solana)
     
     // Investment limits for security  
     uint256 public constant MIN_BNB_INVESTMENT = 0.001 ether; // 0.001 BNB minimum
@@ -588,17 +588,9 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
         }
     }
 
-    // SECURITY FIX: Secure receive function
+    // SECURITY FIX: Prevent direct BNB transfers to avoid breaking accounting
     receive() external payable {
-        // Direct deposit without external call
-        if (!globalEscrow.isInitialized) revert EscrowNotInitialized();
-        if (msg.value == 0) revert InvalidAmount();
-        if (emergencyStop) revert EmergencyStopActive();
-        if (paused()) revert("Contract is paused");
-        
-        // Add to recipient's pending withdrawals
-        pendingWithdrawals[globalEscrow.recipientWallet] += msg.value;
-        emit WithdrawalQueued(globalEscrow.recipientWallet, msg.value);
+        revert("Direct BNB transfers are not allowed; use depositBnb()");
     }
 
     // SECURITY FIX: Secure fallback
