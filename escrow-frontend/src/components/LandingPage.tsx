@@ -6,11 +6,65 @@ import { useWallet } from '../contexts/WalletContext';
 import { ethers } from 'ethers';
 import { CONTRACTS, ESCROW_ABI } from '../config/contracts';
 import { getEscrowStatus as getSolanaEscrowStatus } from '../utils/solana';
+import { useBnbContractConfig } from '../hooks/useBnbContractConfig';
+import { useSolanaContractConfig } from '../hooks/useSolanaContractConfig';
 
 export const LandingPage: React.FC = () => {
   const wallet = useWallet();
   const [lockDuration, setLockDuration] = useState<string>('Loading...');
+  const bnbContractConfig = useBnbContractConfig();
+  const solanaContractConfig = useSolanaContractConfig();
   
+  // Function to get total token supply based on current chain
+  const getTotalTokenSupply = () => {
+    if (wallet.chain === 'solana') {
+      return solanaContractConfig.isLoading 
+        ? 'Loading...' 
+        : solanaContractConfig.totalTokensAvailable.toLocaleString();
+    } else {
+      return bnbContractConfig.isLoading 
+        ? 'Loading...' 
+        : parseFloat(bnbContractConfig.totalTokensAvailable).toLocaleString();
+    }
+  };
+  
+  // Function to get investment limits based on current chain
+  const getInvestmentLimits = () => {
+    if (wallet.chain === 'solana') {
+      return solanaContractConfig.isLoading 
+        ? '0.001 - 10 SOL' 
+        : `${solanaContractConfig.minInvestmentAmount} - ${solanaContractConfig.maxInvestmentPerUser} SOL`;
+    } else {
+      return bnbContractConfig.isLoading 
+        ? '0.001 - 10,000 BNB' 
+        : `${bnbContractConfig.minInvestmentAmount} - ${parseFloat(bnbContractConfig.maxInvestmentPerUser).toLocaleString()} BNB`;
+    }
+  };
+  
+  // Dynamic steps based on current chain
+  const steps = [
+    {
+      step: '1',
+      title: 'Connect Wallet',
+      description: 'Connect your Solana or BNB wallet to get started with investing.',
+    },
+    {
+      step: '2',
+      title: 'Choose Amount',
+      description: `Select your investment amount (${getInvestmentLimits()}).`,
+    },
+    {
+      step: '3',
+      title: 'Invest Securely',
+      description: 'Your funds are split: 50% to project, 50% time-locked for protection.',
+    },
+    {
+      step: '4',
+      title: 'Get Tokens',
+      description: 'Receive all your tokens immediately and track your time-locked funds.',
+    },
+  ];
+
   // Получаем lockDuration из контракта
   const fetchLockDuration = async () => {
     try {
@@ -73,28 +127,6 @@ export const LandingPage: React.FC = () => {
     },
   ];
 
-  const steps = [
-    {
-      step: '1',
-      title: 'Connect Wallet',
-      description: 'Connect your Solana or BNB wallet to get started with investing.',
-    },
-    {
-      step: '2',
-      title: 'Choose Amount',
-      description: 'Select your investment amount (0.001 - 100 tokens minimum).',
-    },
-    {
-      step: '3',
-      title: 'Invest Securely',
-      description: 'Your funds are split: 50% to project, 50% time-locked for protection.',
-    },
-    {
-      step: '4',
-      title: 'Get Tokens',
-      description: 'Receive all your tokens immediately and track your time-locked funds.',
-    },
-  ];
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -297,7 +329,7 @@ export const LandingPage: React.FC = () => {
             <div className="text-text-muted text-sm">Time-lock Period</div>
           </motion.div>
           <motion.div variants={itemVariants}>
-            <div className="text-3xl font-bold gradient-text mb-2">1000</div>
+            <div className="text-3xl font-bold gradient-text mb-2">{getTotalTokenSupply()}</div>
             <div className="text-text-muted text-sm">Total Token Supply</div>
           </motion.div>
         </div>

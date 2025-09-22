@@ -14,6 +14,8 @@ import {
 import { ethers } from 'ethers';
 import { CONTRACTS, ESCROW_ABI, NETWORKS } from '../config/contracts';
 import { useSolanaInvestment } from '../hooks/useSolanaInvestment';
+import { useBnbContractConfig } from '../hooks/useBnbContractConfig';
+import { useSolanaContractConfig } from '../hooks/useSolanaContractConfig';
 import { getCurrentBnbPrice, calculateTokensForBnb, getSolanaTransparencyData } from '../utils/solana';
 import { NetworkSwitchModal } from './NetworkSwitchModal';
 import { 
@@ -76,6 +78,8 @@ export const InvestmentDashboard: React.FC = () => {
   
   // Solana hook
   const solanaInvestment = useSolanaInvestment();
+  const bnbContractConfig = useBnbContractConfig();
+  const solanaContractConfig = useSolanaContractConfig();
 
   // Demo data for both networks
   const getDemoData = () => {
@@ -103,7 +107,7 @@ export const InvestmentDashboard: React.FC = () => {
           isUnlocked: demoIsUnlocked
         },
         escrowData: {
-          totalTokensAvailable: 10000, // Increased total supply to be realistic
+          totalTokensAvailable: solanaContractConfig.totalTokensAvailable, // Dynamic from contract
           tokensSold: 4500, // Multiple investors: our 2370 + others
           totalSolDeposited: 8.5, // Total across all investors
           totalSolWithdrawn: 4.25, // 50% released to project (8.5 * 0.5)
@@ -136,7 +140,7 @@ export const InvestmentDashboard: React.FC = () => {
         },
         escrowStatus: {
           isInitialized: true,
-          totalTokensAvailable: "10000",
+          totalTokensAvailable: bnbContractConfig.totalTokensAvailable,
           tokensSold: "8500", // Realistic: our ~5800 + others  
           totalBnbDeposited: "12.5", // Total across all investors
           totalBnbWithdrawn: "6.25", // 50% released (12.5 * 0.5)
@@ -735,14 +739,14 @@ export const InvestmentDashboard: React.FC = () => {
                   value={investAmount}
                   onChange={(e) => setInvestAmount(e.target.value)}
                   placeholder="0.001"
-                  min="0.001"
-                  max="10"
+                  min={solanaContractConfig.minInvestmentAmount.toString()}
+                  max={solanaContractConfig.maxInvestmentPerUser.toString()}
                   step="0.001"
                   className="input"
                   disabled={!wallet.isConnected}
                 />
                 <p className="text-text-muted text-xs mt-1">
-                  Min: 0.001 SOL | Max: 10 SOL | Current SOL: ${solanaInvestment.currentSolPrice.toFixed(0)}
+                  Min: {solanaContractConfig.minInvestmentAmount} SOL | Max: {solanaContractConfig.maxInvestmentPerUser} SOL | Current SOL: ${solanaInvestment.currentSolPrice.toFixed(0)}
                 </p>
               </div>
 
@@ -1409,7 +1413,11 @@ export const InvestmentDashboard: React.FC = () => {
           <div>
             <p className="text-text-muted mb-1">Token Supply:</p>
             <p className="text-text-primary">
-              {escrowStatus?.totalTokensAvailable ? parseFloat(escrowStatus.totalTokensAvailable).toFixed(0) : '10,000'} ODX (18 decimals)
+              {escrowStatus?.totalTokensAvailable 
+                ? parseFloat(escrowStatus.totalTokensAvailable).toFixed(0) 
+                : (wallet.chain === 'solana' 
+                  ? solanaContractConfig.totalTokensAvailable.toLocaleString() 
+                  : parseFloat(bnbContractConfig.totalTokensAvailable).toLocaleString())} ODX (18 decimals)
             </p>
           </div>
           <div>
@@ -1456,14 +1464,14 @@ export const InvestmentDashboard: React.FC = () => {
                 value={investAmount}
                 onChange={(e) => setInvestAmount(e.target.value)}
                 placeholder="0.001"
-                min="0.001"
-                max="10"
+                min={bnbContractConfig.minInvestmentAmount}
+                max={bnbContractConfig.maxInvestmentPerUser}
                 step="0.001"
                 className="input"
                 disabled={isInvesting}
               />
               <p className="text-text-muted text-xs mt-1">
-                Min: 0.001 BNB | Max: 10 BNB | Current BNB: ${currentBnbPrice.toFixed(0)}
+                Min: {bnbContractConfig.minInvestmentAmount} BNB | Max: {parseFloat(bnbContractConfig.maxInvestmentPerUser).toLocaleString()} BNB | Current BNB: ${currentBnbPrice.toFixed(0)}
               </p>
             </div>
 
@@ -1536,8 +1544,11 @@ export const InvestmentDashboard: React.FC = () => {
                 <span className="text-text-muted">Available Tokens:</span>
                 <span className="text-text-primary">
                   {isDemoMode 
-                    ? parseFloat(getDemoData().escrowStatus?.totalTokensAvailable || "10000").toFixed(0)
-                    : (escrowStatus?.totalTokensAvailable ? parseFloat(escrowStatus.totalTokensAvailable).toFixed(0) : 1000)
+                    ? parseFloat(getDemoData().escrowStatus?.totalTokensAvailable || 
+                      (wallet.chain === 'solana' ? solanaContractConfig.totalTokensAvailable.toString() : bnbContractConfig.totalTokensAvailable)).toFixed(0)
+                    : (escrowStatus?.totalTokensAvailable 
+                      ? parseFloat(escrowStatus.totalTokensAvailable).toFixed(0) 
+                      : (wallet.chain === 'solana' ? solanaContractConfig.totalTokensAvailable : parseFloat(bnbContractConfig.totalTokensAvailable)))
                   } ODX
                 </span>
               </div>
