@@ -1,15 +1,24 @@
 import { ContractAddresses, NetworkInfo } from '../types';
 
+// Utility function to get required environment variable
+function getRequiredEnvVar(name: string): string {
+  const value = import.meta.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 export const CONTRACTS: ContractAddresses = {
   solana: {
-    programId: "9kaoCE6mLVUvvAkSkE4UbPkwb6fy7yfuDq78zGsRUVoS", // New Solana program with initialization-based timer
-    globalEscrow: "Cc7Yquecy9YUBwRbiNXqjtL5yAVcqTmyaa7ETV2y3cTC", // New Global Escrow with initialization-based timer
-    tokenMint: "GgSUXk3vge5kVnZ7JiV1njAJ3mCpcrqBWcpG8ohWFTL2", // New Token mint with initialization timer
+    programId: getRequiredEnvVar('VITE_SOLANA_PROGRAM_ID'),
+    globalEscrow: getRequiredEnvVar('VITE_SOLANA_GLOBAL_ESCROW'),
+    tokenMint: getRequiredEnvVar('VITE_SOLANA_TOKEN_MINT'),
   },
   bnb: {
-    escrow: "0x7f04f41B6bD9dCd792F5fb45954CcFF7c9240F2C", // FIXED: Contract with global timer from initialization
-    token: "0x065bCc28E8be8F2Eae577C35B28d7cdC5976047F", // FIXED: Mock ODX token for testing
-    priceFeed: "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526", // BSC Testnet Chainlink BNB/USD
+    escrow: getRequiredEnvVar('VITE_BNB_ESCROW_ADDRESS'),
+    token: getRequiredEnvVar('VITE_BNB_TOKEN_ADDRESS'),
+    priceFeed: getRequiredEnvVar('VITE_BNB_PRICE_FEED'),
   }
 };
 
@@ -50,6 +59,10 @@ export const ESCROW_ABI = [
   "function emergencyStop() view returns (bool)",
   "function getChainlinkPrice() view returns (uint256 price, uint256 timestamp)",
   "function getInitializationTimestamp() view returns (uint256)",
+  
+  // Configuration functions for dynamic UI limits
+  "function maxInvestmentPerUser() view returns (uint256)",
+  "function minInvestmentAmount() view returns (uint256)",
   
   // NEW: Transparency functions for lock status
   "function totalDeposited() view returns (uint256)",
@@ -98,7 +111,7 @@ export const MINIMUM_INVESTMENT_SOL = "0.001"; // 0.001 SOL minimum
 export const MAXIMUM_INVESTMENT_SOL = "10"; // 10 SOL maximum
 
 // Reown/WalletConnect configuration
-export const REOWN_PROJECT_ID = process.env.VITE_REOWN_PROJECT_ID || '7b95bde23a23c6cb1bf4df1329c53791'
+export const REOWN_PROJECT_ID = getRequiredEnvVar('VITE_REOWN_PROJECT_ID')
 
 // Update intervals (in milliseconds)
 export const UPDATE_INTERVALS = {

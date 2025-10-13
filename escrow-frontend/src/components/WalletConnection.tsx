@@ -12,8 +12,17 @@ import { bscTestnet } from '@reown/appkit/networks';
 // Solana wallet modal
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 
+// Utility function to get required environment variable
+function getRequiredEnvVar(name: string): string {
+  const value = import.meta.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 // Initialize Reown AppKit
-const projectId = process.env.VITE_REOWN_PROJECT_ID || '7b95bde23a23c6cb1bf4df1329c53791';
+const projectId = getRequiredEnvVar('VITE_REOWN_PROJECT_ID');
 
 const metadata = {
   name: 'Ondrix Escrow',
