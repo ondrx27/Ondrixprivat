@@ -13,7 +13,6 @@ use solana_program::{
     sysvar::Sysvar,
 };
 use spl_token::instruction as spl_instruction;
-use spl_associated_token_account;
 use borsh::{BorshDeserialize, BorshSerialize};
 use thiserror::Error;
 use chainlink_solana::{
@@ -144,16 +143,12 @@ impl InvestorAccount {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum InvestorStatus {
+    #[default]
     Uninitialized,
     Deposited,        // SOL deposited, tokens received, SOL locked
     SolWithdrawn,     // Locked SOL has been withdrawn by initializer
-}
-
-impl Default for InvestorStatus {
-    fn default() -> Self {
-        InvestorStatus::Uninitialized
-    }
 }
 
 // PDA helper functions with proper seeds
@@ -581,7 +576,7 @@ pub fn process_initialize_escrow(
     )?;
 
     // SECURITY: Validate lock duration is reasonable (1 minute to 1 year)
-    if lock_duration < 60 || lock_duration > (365 * 24 * 60 * 60) {
+    if !(60..=(365 * 24 * 60 * 60)).contains(&lock_duration) {
         return Err(EscrowError::InvalidInstruction.into());
     }
 
@@ -1129,7 +1124,7 @@ pub fn process_close_sale(
     }
 
     // Validate token vault PDA
-    let (expected_token_vault, _bump) = find_token_vault_pda(&global_escrow_account.key, program_id);
+    let (expected_token_vault, _bump) = find_token_vault_pda(global_escrow_account.key, program_id);
     if token_vault_account.key != &expected_token_vault {
         return Err(EscrowError::InvalidPDA.into());
     }
