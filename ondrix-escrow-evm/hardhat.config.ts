@@ -54,6 +54,6 @@ const config: HardhatUserConfig = {
       bscTestnet: process.env.BSCSCAN_API_KEY || "",
     },
   },
-}as any;
+};
 
 export default config;

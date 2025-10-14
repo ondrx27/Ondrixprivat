@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.10.0'
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -36,7 +36,10 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --no-audit --no-fund
+
+      - name: Hardhat compile (fail-fast)
+        run: npx hardhat compile
 
       - name: Install Slither
         run: |
@@ -50,16 +53,28 @@ jobs:
           pip3 install mythril
         continue-on-error: true
 
-      - name: Run Slither analysis
+      - name: Run Slither analysis (with remaps & via-IR)
         run: |
-          slither . --json slither-report.json || true
-          slither . > slither-report.txt 2>&1 || true
+          slither contracts \
+            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/ @chainlink/=node_modules/@chainlink/" \
+            --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules --via-ir --optimize --optimize-runs 200" \
+            --json slither-report.json || true
+          slither contracts \
+            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/ @chainlink/=node_modules/@chainlink/" \
+            --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules --via-ir --optimize --optimize-runs 200" \
+            > slither-report.txt 2>&1 || true
         continue-on-error: true
 
-      - name: Run Mythril analysis
+      - name: Run Mythril analysis (with include paths)
         run: |
-          find contracts -name "*.sol" -exec myth analyze {} --solv 0.8.20 -o json \; > mythril-report.json 2>&1 || true
-          find contracts -name "*.sol" -exec myth analyze {} --solv 0.8.20 \; > mythril-report.txt 2>&1 || true
+          myth analyze contracts \
+            --solv 0.8.20 \
+            --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules" \
+            -o json > mythril-report.json 2>&1 || true
+          myth analyze contracts \
+            --solv 0.8.20 \
+            --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules" \
+            > mythril-report.txt 2>&1 || true
         continue-on-error: true
         timeout-minutes: 30
 
