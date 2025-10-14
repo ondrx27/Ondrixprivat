@@ -72,11 +72,11 @@ jobs:
 
       - name: Run Mythril analysis (with include paths)
         run: |
-          myth analyze contracts \
+          myth analyze contracts/OndrixEscrow.sol \
             --solv 0.8.20 \
             --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules" \
             -o json > mythril-report.json 2>&1 || true
-          myth analyze contracts \
+          myth analyze contracts/OndrixEscrow.sol \
             --solv 0.8.20 \
             --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules" \
             > mythril-report.txt 2>&1 || true
@@ -90,7 +90,7 @@ jobs:
 
       - name: Run tests
         run: |
-          npx hardhat test > test-output.txt 2>&1 || true
+          npx hardhat test --reporter spec > test-output.txt 2>&1 || true
         continue-on-error: true
 
       - name: Upload audit artifacts
