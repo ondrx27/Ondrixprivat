@@ -41,15 +41,15 @@ const config: HardhatUserConfig = {
       type: "http",
       chainType: "l1",
       url: "https://bsc-dataseed1.binance.org/",
-      accounts: process.env.BSC_PRIVATE_KEY ? [process.env.BSC_PRIVATE_KEY] : [],
+      ...(process.env.BSC_PRIVATE_KEY && { accounts: [process.env.BSC_PRIVATE_KEY] }),
       gasPrice: 5000000000, // 5 gwei
     },
-    // BSC Testnet  
+    // BSC Testnet
     bscTestnet: {
       type: "http",
       chainType: "l1",
       url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545/",
-      accounts: process.env.BSC_TESTNET_PRIVATE_KEY ? [process.env.BSC_TESTNET_PRIVATE_KEY] : [],
+      ...(process.env.BSC_TESTNET_PRIVATE_KEY && { accounts: [process.env.BSC_TESTNET_PRIVATE_KEY] }),
       gasPrice: 10000000000, // 10 gwei
     },
   },
