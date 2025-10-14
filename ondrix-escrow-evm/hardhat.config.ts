@@ -6,37 +6,31 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-// Build networks object conditionally
+// Hardhat 3.x requires 'type' field but accepts empty accounts array
 const networks: any = {
-  hardhatMainnet: {
-    type: "edr-simulated",
-    chainType: "l1",
-  },
-  hardhatOp: {
-    type: "edr-simulated",
-    chainType: "op",
-  },
-};
-
-// Only add BSC networks if private keys exist
-if (process.env.BSC_PRIVATE_KEY) {
-  networks.bsc = {
-    type: "http",
-    chainType: "l1",
-    url: "https://bsc-dataseed1.binance.org/",
-    accounts: [process.env.BSC_PRIVATE_KEY],
-    gasPrice: 5000000000,
-  };
-}
-
-if (process.env.BSC_TESTNET_PRIVATE_KEY) {
-  networks.bscTestnet = {
+  bscTestnet: {
     type: "http",
     chainType: "l1",
     url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545/",
-    accounts: [process.env.BSC_TESTNET_PRIVATE_KEY],
+    accounts: process.env.BSC_TESTNET_PRIVATE_KEY ? [process.env.BSC_TESTNET_PRIVATE_KEY] : [],
     gasPrice: 10000000000,
-  };
+  },
+  bsc: {
+    type: "http",
+    chainType: "l1",
+    url: "https://bsc-dataseed1.binance.org/",
+    accounts: process.env.BSC_PRIVATE_KEY ? [process.env.BSC_PRIVATE_KEY] : [],
+    gasPrice: 5000000000,
+  },
+  hardhat: {
+    type: "edr-simulated",
+    chainType: "l1",
+  },
+  localhost: {
+    type: "http",
+    chainType: "l1",
+    url: "http://127.0.0.1:8545",
+  },
 }
 
 const config: HardhatUserConfig = {
