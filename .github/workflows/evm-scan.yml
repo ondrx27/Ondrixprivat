@@ -80,10 +80,12 @@ jobs:
           ARTIFACT=artifacts/contracts/OndrixEscrow.sol/OndrixEscrow.json
           if [ -f "$ARTIFACT" ]; then
             echo "Found artifact: $ARTIFACT"
-            BYTECODE=$(jq -r '.deployedBytecode.object // .deployedBytecode // .bytecode.object // .bytecode' "$ARTIFACT")
+            BYTECODE=$(jq -r '.deployedBytecode.object // .deployedBytecode // .bytecode.object // .bytecode // empty' "$ARTIFACT")
             echo "Bytecode length: ${#BYTECODE}"
             if [ -z "$BYTECODE" ] || [ "$BYTECODE" = "null" ]; then
               echo "No bytecode found in artifact" >&2
+              echo "Mythril analysis skipped" > mythril-report.txt
+              echo "{}" > mythril-report.json
               exit 0
             fi
             myth analyze -c "$BYTECODE" -o json > mythril-report.json 2>&1 || true
