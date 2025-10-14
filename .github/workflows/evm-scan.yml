@@ -44,7 +44,7 @@ jobs:
           fi
 
       - name: Hardhat compile (fail-fast)
-        run: npx hardhat compile
+        run: npx hardhat compile --force
 
       - name: Install Slither
         run: |
@@ -72,16 +72,27 @@ jobs:
 
       - name: Run Mythril analysis (analyze compiled bytecode)
         run: |
+          echo "Checking artifacts directory..."
+          ls -la artifacts/ || echo "No artifacts dir"
+          ls -la artifacts/contracts/ || echo "No contracts dir"
+          ls -la artifacts/contracts/OndrixEscrow.sol/ || echo "No OndrixEscrow dir"
+          
           ARTIFACT=artifacts/contracts/OndrixEscrow.sol/OndrixEscrow.json
           if [ -f "$ARTIFACT" ]; then
+            echo "Found artifact: $ARTIFACT"
             BYTECODE=$(jq -r '.deployedBytecode.object // .deployedBytecode // .bytecode.object // .bytecode' "$ARTIFACT")
+            echo "Bytecode length: ${#BYTECODE}"
+            if [ -z "$BYTECODE" ] || [ "$BYTECODE" = "null" ]; then
+              echo "No bytecode found in artifact" >&2
+              exit 0
+            fi
+            myth analyze -c "$BYTECODE" -o json > mythril-report.json 2>&1 || true
+            myth analyze -c "$BYTECODE" > mythril-report.txt 2>&1 || true
+          else
+            echo "Artifact not found: $ARTIFACT" >&2
+            echo "Mythril analysis skipped" > mythril-report.txt
+            echo "{}" > mythril-report.json
           fi
-          if [ -z "$BYTECODE" ] || [ "$BYTECODE" = "null" ]; then
-            echo "Artifact bytecode not found; attempting compile json." >&2
-            exit 0
-          fi
-          myth analyze -c "$BYTECODE" -o json > mythril-report.json 2>&1 || true
-          myth analyze -c "$BYTECODE" > mythril-report.txt 2>&1 || true
         continue-on-error: true
         timeout-minutes: 30
 
