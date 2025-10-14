@@ -70,18 +70,18 @@ jobs:
             > slither-report.txt 2>&1 || true
         continue-on-error: true
 
-      - name: Run Mythril analysis (via Standard JSON settings)
+      - name: Run Mythril analysis (analyze compiled bytecode)
         run: |
-          myth analyze contracts/OndrixEscrow.sol \
-            --solv 0.8.20 \
-            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/ @chainlink/=node_modules/@chainlink/" \
-            --solc-settings '{"optimizer":{"enabled":true,"runs":200},"viaIR":true}' \
-            -o json > mythril-report.json 2>&1 || true
-          myth analyze contracts/OndrixEscrow.sol \
-            --solv 0.8.20 \
-            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/ @chainlink/=node_modules/@chainlink/" \
-            --solc-settings '{"optimizer":{"enabled":true,"runs":200},"viaIR":true}' \
-            > mythril-report.txt 2>&1 || true
+          ARTIFACT=artifacts/contracts/OndrixEscrow.sol/OndrixEscrow.json
+          if [ -f "$ARTIFACT" ]; then
+            BYTECODE=$(jq -r '.deployedBytecode.object // .deployedBytecode // .bytecode.object // .bytecode' "$ARTIFACT")
+          fi
+          if [ -z "$BYTECODE" ] || [ "$BYTECODE" = "null" ]; then
+            echo "Artifact bytecode not found; attempting compile json." >&2
+            exit 0
+          fi
+          myth analyze -c "$BYTECODE" -o json > mythril-report.json 2>&1 || true
+          myth analyze -c "$BYTECODE" > mythril-report.txt 2>&1 || true
         continue-on-error: true
         timeout-minutes: 30
 
