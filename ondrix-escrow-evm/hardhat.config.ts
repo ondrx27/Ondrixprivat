@@ -30,28 +30,25 @@ const config: HardhatUserConfig = {
       type: "edr-simulated",
       chainType: "op",
     },
-    sepolia: {
-      type: "http",
-      chainType: "l1",
-      url: configVariable("SEPOLIA_RPC_URL"),
-      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
-    },
-    // BSC Mainnet
-    bsc: {
-      type: "http",
-      chainType: "l1",
-      url: "https://bsc-dataseed1.binance.org/",
-      ...(process.env.BSC_PRIVATE_KEY && { accounts: [process.env.BSC_PRIVATE_KEY] }),
-      gasPrice: 5000000000, // 5 gwei
-    },
-    // BSC Testnet
-    bscTestnet: {
-      type: "http",
-      chainType: "l1",
-      url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545/",
-      ...(process.env.BSC_TESTNET_PRIVATE_KEY && { accounts: [process.env.BSC_TESTNET_PRIVATE_KEY] }),
-      gasPrice: 10000000000, // 10 gwei
-    },
+    // BSC networks only included if private keys are available
+    ...(process.env.BSC_PRIVATE_KEY && {
+      bsc: {
+        type: "http" as const,
+        chainType: "l1" as const,
+        url: "https://bsc-dataseed1.binance.org/",
+        accounts: [process.env.BSC_PRIVATE_KEY],
+        gasPrice: 5000000000,
+      },
+    }),
+    ...(process.env.BSC_TESTNET_PRIVATE_KEY && {
+      bscTestnet: {
+        type: "http" as const,
+        chainType: "l1" as const,
+        url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545/",
+        accounts: [process.env.BSC_TESTNET_PRIVATE_KEY],
+        gasPrice: 10000000000,
+      },
+    }),
   },
   etherscan: {
     apiKey: {
