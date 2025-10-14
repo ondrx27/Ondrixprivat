@@ -80,21 +80,7 @@ jobs:
           ARTIFACT=artifacts/contracts/OndrixEscrow.sol/OndrixEscrow.json
           if [ -f "$ARTIFACT" ]; then
             echo "Found artifact: $ARTIFACT"
-
-            BYTECODE=$(jq -r '
-              if (.deployedBytecode | type) == "object" then
-                .deployedBytecode.object
-              elif (.deployedBytecode | type) == "string" then
-                .deployedBytecode
-              elif (.bytecode | type) == "object" then
-                .bytecode.object
-              elif (.bytecode | type) == "string" then
-                .bytecode
-              else
-                empty
-              end
-            ' "$ARTIFACT")
-
+            BYTECODE=$(jq -r '.deployedBytecode.object // .deployedBytecode // .bytecode.object // .bytecode // empty' "$ARTIFACT")
             echo "Bytecode length: ${#BYTECODE}"
             if [ -z "$BYTECODE" ] || [ "$BYTECODE" = "null" ]; then
               echo "No bytecode found in artifact" >&2
@@ -102,16 +88,24 @@ jobs:
               echo "{}" > mythril-report.json
               exit 0
             fi
+            myth analyze -c "$BYTECODE" \
+              --max-depth 32 \
+              --execution-timeout 600 \
+              --solver-timeout 10 \
+              -o json > mythril-report.json 2>&1 || true
 
-            myth analyze -c "$BYTECODE" -o json > mythril-report.json 2>&1 || true
-            myth analyze -c "$BYTECODE" > mythril-report.txt 2>&1 || true
+            myth analyze -c "$BYTECODE" \
+              --max-depth 32 \
+              --execution-timeout 600 \
+              --solver-timeout 10 \
+              > mythril-report.txt 2>&1 || true
           else
             echo "Artifact not found: $ARTIFACT" >&2
             echo "Mythril analysis skipped" > mythril-report.txt
             echo "{}" > mythril-report.json
           fi
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 20
 
       - name: Compile contracts
         run: |
