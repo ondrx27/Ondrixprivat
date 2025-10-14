@@ -70,15 +70,17 @@ jobs:
             > slither-report.txt 2>&1 || true
         continue-on-error: true
 
-      - name: Run Mythril analysis (with include paths)
+      - name: Run Mythril analysis (via Standard JSON settings)
         run: |
           myth analyze contracts/OndrixEscrow.sol \
             --solv 0.8.20 \
-            --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules --via-ir --optimize --optimize-runs 200" \
+            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/ @chainlink/=node_modules/@chainlink/" \
+            --solc-settings '{"optimizer":{"enabled":true,"runs":200},"viaIR":true}' \
             -o json > mythril-report.json 2>&1 || true
           myth analyze contracts/OndrixEscrow.sol \
             --solv 0.8.20 \
-            --solc-args "--base-path . --include-path node_modules --allow-paths .,$GITHUB_WORKSPACE/ondrix-escrow-evm/node_modules --via-ir --optimize --optimize-runs 200" \
+            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/ @chainlink/=node_modules/@chainlink/" \
+            --solc-settings '{"optimizer":{"enabled":true,"runs":200},"viaIR":true}' \
             > mythril-report.txt 2>&1 || true
         continue-on-error: true
         timeout-minutes: 30
