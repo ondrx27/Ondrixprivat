@@ -375,26 +375,32 @@ contract OndrixEscrow is ReentrancyGuard, Pausable, Ownable {
     /**
      * @dev Calculate tokens for BNB amount - OVERFLOW PROTECTION ADDED
      */
-    function calculateTokensForBnb(uint256 bnbAmount, uint256 bnbUsdPrice) 
-        public 
-        pure 
-        returns (uint256 tokenAmount) 
+    function calculateTokensForBnb(uint256 bnbAmount, uint256 bnbUsdPrice)
+        public
+        pure
+        returns (uint256 tokenAmount)
     {
-        // SECURITY FIX: Check for overflow before multiplication
+        // SECURITY FIX: Group multiplications before divisions to preserve precision
+        // Formula: (bnbAmount * bnbUsdPrice * 10^TOKEN_DECIMALS * 10^2) / (BNB_WEI * 10^CHAINLINK_DECIMALS * TOKEN_PRICE_CENTS)
+        // Simplified: (bnbAmount * bnbUsdPrice * 10^18 * 100) / (10^18 * 10^8 * TOKEN_PRICE_CENTS)
+
+        // Step 1: Check for overflow
         require(bnbAmount <= type(uint256).max / bnbUsdPrice, "Overflow protection");
-        
-        // Step 1: Calculate USD value of BNB deposit
-        uint256 bnbValueUsd8Decimals = (bnbAmount * bnbUsdPrice) / BNB_WEI;
-        
-        // Step 2: Convert USD value to cents (remove 8 decimals, add 2 for cents)
-        uint256 bnbValueCents = bnbValueUsd8Decimals / (10**(CHAINLINK_USD_DECIMALS - 2));
-        
+
+        // Step 2: Calculate numerator - group all multiplications
+        // bnbAmount * bnbUsdPrice * 10^TOKEN_DECIMALS / (BNB_WEI * 10^(CHAINLINK_DECIMALS-2) * TOKEN_PRICE_CENTS)
+        uint256 numerator = bnbAmount * bnbUsdPrice * (10**TOKEN_DECIMALS);
+
+        // Step 3: Calculate denominator - group all divisions
+        // BNB_WEI (10^18) * 10^(CHAINLINK_DECIMALS-2) (10^6) * TOKEN_PRICE_CENTS
+        uint256 denominator = BNB_WEI * (10**(CHAINLINK_USD_DECIMALS - 2)) * TOKEN_PRICE_USD_CENTS;
+
+        // Step 4: Final division
+        tokenAmount = numerator / denominator;
+
         // SECURITY FIX: Minimum precision check
-        require(bnbValueCents > 0, "Amount too small for precision");
-        
-        // Step 3: Calculate tokens
-        tokenAmount = (bnbValueCents * (10**TOKEN_DECIMALS)) / TOKEN_PRICE_USD_CENTS;
-        
+        require(tokenAmount > 0, "Amount too small for precision");
+
         return tokenAmount;
     }
 
