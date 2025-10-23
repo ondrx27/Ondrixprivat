@@ -57,12 +57,6 @@ global_escrow.serialize(&mut &mut global_escrow_account.data.borrow_mut()[..])?;
 
 **Overall Rating: 9/10** ⭐ (upgraded from 6.5/10)
 
-**Reports Location:** [../escrow-solana-security-reports/](../escrow-solana-security-reports/)
-- 📄 [SOLANA_ESCROW_FINAL_AUDIT_REPORT.md](../escrow-solana-security-reports/SOLANA_ESCROW_FINAL_AUDIT_REPORT.md) - Full audit with fix details
-- 📄 [cargo-audit.txt](../escrow-solana-security-reports/cargo-audit.txt) - 3 advisories (all low)
-- 📄 [clippy-output.txt](../escrow-solana-security-reports/clippy-output.txt) - 5 warnings (expected)
-- 📄 [README.md](../escrow-solana-security-reports/README.md) - Quick summary
-
 ---
 
 ## 🔐 **SECURITY PATTERNS VERIFIED**
@@ -385,26 +379,6 @@ SOL_USD_FEED: (Configured at init)
 
 ---
 
-## 📚 **DOCUMENTATION LINKS**
-
-**Security Reports:**
-- 📄 [Full Audit Report (Oct 2025)](../escrow-solana-security-reports/SOLANA_ESCROW_FINAL_AUDIT_REPORT.md)
-- 📄 [Cargo Audit Results](../escrow-solana-security-reports/cargo-audit.txt)
-- 📄 [Clippy Analysis](../escrow-solana-security-reports/clippy-output.txt)
-- 📄 [Quick Summary](../escrow-solana-security-reports/README.md)
-
-**Project Documentation:**
-- 📄 [Program README](./README.md)
-- 📄 [Test Results](./FINAL-TEST-REPORT.md)
-- 📄 [General Audit Summary](../../AUDIT_COMPLETION_SUMMARY.md)
-- 📄 [Vesting Logic Audit](../../VESTING_LOGIC_AUDIT.md)
-
-**Cross-Chain Comparison:**
-- 📄 [BNB Escrow Audit](../ondrix-escrow-evm/SECURITY_AUDIT_REPORT.md)
-- 📄 [Final Audit Report](../../FINAL_AUDIT_REPORT.md)
-
----
-
 ## 🎯 **FINAL VERDICT**
 
 **Security Status:** ✅ **PRODUCTION READY**
@@ -435,4 +409,5 @@ The ONDRIX Solana Escrow program is **production-ready** after critical fix:
 2. Build configuration updated for expected warnings
 3. Documentation significantly improved
 4. Security report comprehensive
+
 
