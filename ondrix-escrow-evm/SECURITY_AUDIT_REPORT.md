@@ -22,10 +22,6 @@
 
 **Overall Rating: 9/10** ⭐
 
-**Reports Location:** [../escrow-evm-security-reports/](../escrow-evm-security-reports/)
-- 📄 [BNB_ESCROW_FINAL_AUDIT_REPORT.md](../escrow-evm-security-reports/BNB_ESCROW_FINAL_AUDIT_REPORT.md) - Full audit report
-- 📄 [slither-report.txt](../escrow-evm-security-reports/slither-report.txt) - 41 findings (all low/info)
-- 📄 [mythril-report.txt](../escrow-evm-security-reports/mythril-report.txt) - No issues detected
 
 ---
 
@@ -288,17 +284,5 @@ PRICE_STALENESS_THRESHOLD: 300 seconds (5 minutes)
 TOKEN_PRICE: $0.10 USD
 ```
 
----
 
-## 📚 **DOCUMENTATION LINKS**
 
-**Security Reports:**
-- 📄 [Full Audit Report (Oct 2025)](../escrow-evm-security-reports/BNB_ESCROW_FINAL_AUDIT_REPORT.md)
-- 📄 [Slither Analysis](../escrow-evm-security-reports/slither-report.txt)
-- 📄 [Mythril Analysis](../escrow-evm-security-reports/mythril-report.txt)
-- 📄 [README with Instructions](../escrow-evm-security-reports/README.md)
-
-**Project Documentation:**
-- 📄 [Contract README](./README.md)
-- 📄 [General Audit Summary](../../AUDIT_COMPLETION_SUMMARY.md)
-- 📄 [Final Audit Report](../../FINAL_AUDIT_REPORT.md)
