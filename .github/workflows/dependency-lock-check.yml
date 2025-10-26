@@ -7,11 +7,14 @@ on:
       - '**/Cargo.lock'
       - '**/package.json'
       - '**/package-lock.json'
+      - '.github/workflows/dependency-lock-check.yml'
   push:
     branches: [main, master]
     paths:
       - '**/Cargo.toml'
       - '**/package.json'
+      - '.github/workflows/dependency-lock-check.yml'
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   check-solana-dependencies:
@@ -42,10 +45,15 @@ jobs:
           echo "=== Checking Cargo.toml for exact version locks ==="
           echo ""
 
-          # Check for dependencies without = prefix
-          if grep -E '^[[:space:]]*[a-z0-9_-]+ = "[^=]' Cargo.toml | grep -v '^\[' | grep -v 'crate-type' | grep -v 'features' | grep -v 'name\|version\|edition'; then
-            echo ""
+          # Check for dependency lines without = prefix in version string
+          # Exclude [package] metadata and [lib] section
+          INVALID_DEPS=$(grep -E '^[a-z0-9_-]+ = "' Cargo.toml | grep -v 'name = "' | grep -v 'version = "' | grep -v 'edition = "' | grep -v 'crate-type' | grep -E '= "[^=]' || true)
+
+          if [ -n "$INVALID_DEPS" ]; then
             echo "❌ ERROR: All dependencies must use exact versions"
+            echo ""
+            echo "Found dependencies without exact version lock:"
+            echo "$INVALID_DEPS"
             echo ""
             echo "Required format:"
             echo "  solana-program = \"=1.18\""
